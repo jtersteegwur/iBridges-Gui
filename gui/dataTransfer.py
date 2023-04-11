@@ -224,7 +224,7 @@ class getDataState(QObject):
 
     def run(self):
         # Diff
-        diff, onlyFS, onlyIrods, same = [], [], [], []
+        diff, onlyFS, onlyIrods, _ = [], [], [], []
         try:
             if self.upload:
                 # Data is placed inside of coll, check if dir or file is inside
@@ -234,10 +234,9 @@ class getDataState(QObject):
                         subColl = self.ic.get_collection(newPath)
                     else:
                         subColl = None
-                    (diff, onlyFS, onlyIrods, same) = self.ic.diff_irods_localfs(
-                                                  subColl, self.localFsPath, scope="checksum")
+                    (diff, onlyFS, onlyIrods, _) = self.ic.diff_irods_localfs(subColl, self.localFsPath, scope="checksum")
                 elif os.path.isfile(self.localFsPath):
-                    (diff, onlyFS, onlyIrods, same) = self.ic.diff_obj_file(
+                    (diff, onlyFS, onlyIrods, _) = self.ic.diff_obj_file(
                                                         newPath, 
                                                         self.localFsPath, scope="checksum")
                 self.updLabels.emit(len(onlyFS), len(diff))
@@ -249,11 +248,11 @@ class getDataState(QObject):
                         FsPath = None
                     else:
                         FsPath = newPath
-                    (diff, onlyFS, onlyIrods, same) = self.ic.diff_irods_localfs(
+                    (diff, onlyFS, onlyIrods, _) = self.ic.diff_irods_localfs(
                                                   self.coll, FsPath, scope="checksum")                        
                 # elif self.ic.dataobject_exists(self.coll.path):
                 else:
-                    (diff, onlyFS, onlyIrods, same) = self.ic.diff_obj_file(
+                    (diff, onlyFS, onlyIrods, _) = self.ic.diff_obj_file(
                                                    self.coll.path, newPath, scope="checksum")
                 self.updLabels.emit(len(onlyIrods), len(diff))
         except:

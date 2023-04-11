@@ -5,6 +5,7 @@ import hashlib
 import logging
 import os
 from shutil import disk_usage
+from concurrent.futures import ThreadPoolExecutor, wait
 import irods.collection
 import irods.data_object
 import irods.exception
@@ -12,6 +13,12 @@ import irodsConnector.keywords as kw
 from irodsConnector.resource import NotEnoughFreeSpace, Resource
 from irodsConnector.session import Session
 from utils import utils
+
+NO_WRITE_ACCESS = 'No rights to write to destination.'
+
+NOT_DIRECTORY = 'destination path does not exist or is not directory'
+
+NOT_A_VALID_SOURCE_PATH = 'not a valid source path'
 
 
 class DataOperation(object):
@@ -264,7 +271,7 @@ class DataOperation(object):
         options.update({
             kw.NUM_THREADS_KW: kw.NUM_THREADS,
             kw.VERIFY_CHKSUM_KW: '',
-            })
+        })
         self._ses_man.session.data_objects.get(irods_path, local_path, **options)
 
     def upload_data(self, source: str, destination: irods.collection.Collection,
@@ -390,22 +397,14 @@ class DataOperation(object):
         if self.is_dataobject_or_collection(source):
             source_path = utils.IrodsPath(source.path)
         else:
-            raise FileNotFoundError(
-                'ERROR iRODS download: not a valid source path'
-            )
+            raise FileNotFoundError('ERROR iRODS download: ' + NOT_A_VALID_SOURCE_PATH)
         destination = utils.LocalPath(destination)
         if not destination.is_dir():
-            logging.info(
-                'DOWNLOAD ERROR: destination path does not exist or is not directory',
-                exc_info=True)
-            raise FileNotFoundError(
-                'ERROR iRODS download: destination path does not exist or is not directory')
+            logging.info('DOWNLOAD ERROR: ' + NOT_DIRECTORY, exc_info=True)
+            raise FileNotFoundError('ERROR iRODS download: ' + NOT_DIRECTORY)
         if not os.access(destination, os.W_OK):
-            logging.info(
-                'DOWNLOAD ERROR: No rights to write to destination.',
-                exc_info=True)
-            raise PermissionError(
-                'ERROR iRODS download: No rights to write to destination.')
+            logging.info('DOWNLOAD ERROR: ' + NO_WRITE_ACCESS, exc_info=True)
+            raise PermissionError('ERROR iRODS download: ' + NO_WRITE_ACCESS)
         cmp_path = destination.joinpath(source_path.name)
         # TODO perhaps treat this path as part of the diff
         if self.is_collection(source) and not cmp_path.is_dir():
@@ -413,11 +412,9 @@ class DataOperation(object):
         # Only download if not present or difference in files.
         if diffs is None:
             if self.is_dataobject(source):
-                diff, _, only_irods, _ = self.diff_obj_file(
-                    source_path, cmp_path, scope="checksum")
+                diff, _, only_irods, _ = self.diff_obj_file(source_path, cmp_path, scope="checksum")
             else:
-                diff, _, only_irods, _ = self.diff_irods_localfs(
-                    source, cmp_path, scope="checksum")
+                diff, _, only_irods, _ = self.diff_irods_localfs(source, cmp_path, scope="checksum")
         else:
             diff, _, only_irods, _ = diffs
         # Check space on destination.
@@ -425,10 +422,10 @@ class DataOperation(object):
             space = disk_usage(destination).free
             if size > (space - buff):
                 logging.info(
-                    'ERROR iRODS download: Not enough space on local disk.',
+                    'ERROR iRODS download: '+'Not enough space on local disk.',
                     exc_info=True)
                 raise NotEnoughFreeSpace(
-                    'ERROR iRODS download: Not enough space on local disk.')
+                    'ERROR iRODS download: '+'Not enough space on local disk.')
         # NOT the same force flag.  This overwrites the local file by default.
         # TODO should there be an option/switch for this 'clobber'ing?
         options = {kw.FORCE_FLAG_KW: ''}
@@ -466,8 +463,38 @@ class DataOperation(object):
             logging.info('DOWNLOAD ERROR', exc_info=True)
             raise error
 
-    def diff_obj_file(self, objpath: str, fspath: str,
-                      scope: str = "size") -> tuple:
+    def walk_irods(self, path):
+        root_subs = self._ses_man.session.collections.get(path).subcollections
+        root_data_objects = self._ses_man.session.collections.get(path).data_objects
+        collections, data_objects = [sub.path for sub in root_subs], \
+                                    [data_object.path for data_object in root_data_objects]
+        for col in collections:
+            new_path = col
+            for x in self.walk_irods(new_path):
+                yield x
+        yield path, collections, data_objects
+
+
+    def recursive_upload(self, source: str, target: str) -> irods.collection.Collection:
+        normalized_source_directories = []
+        result = self.ensure_coll(target)
+        files_in_folder = dict()
+        for src_root, src_dirs, src_files in os.walk(source):
+            src_dirs.sort()
+            target_in_irods = (target + src_root[len(source):] + os.sep).replace(os.sep, '/')
+            normalized_src_dirs_as_in_irods = [target_in_irods + source_dir for source_dir in src_dirs]
+            files_ = [src_root + os.path.sep +  file for file in src_files]
+            files_in_folder[target_in_irods] = files_
+            normalized_source_directories.extend(normalized_src_dirs_as_in_irods)
+
+        with ThreadPoolExecutor(20) as executor:
+            [executor.submit(self.ensure_coll, target_col) for target_col in normalized_source_directories]
+        with ThreadPoolExecutor(42) as file_executor:
+            for file_destination in files_in_folder:
+                [file_executor.submit(self.irods_put, independent_file, file_destination) 
+                 for independent_file in files_in_folder[file_destination]]
+        return result
+    def diff_obj_file(self, objpath: str, fspath: str, scope: str = "size") -> tuple:
         """
         Compares and iRODS object to a file system file.
 
@@ -482,19 +509,17 @@ class DataOperation(object):
         Returns
         ----------
         tuple
-            ([diff], [only_irods], [only_fs], [same])
+            ([diff], [only_fs], [only_irods], [same])
         '''
 
         """
         if os.path.isdir(fspath) and not os.path.isfile(fspath):
             raise IsADirectoryError("IRODS FS DIFF: file is a directory.")
         if self._ses_man.session.collections.exists(objpath):
-            raise IsADirectoryError("IRODS FS DIFF: object exists already as collection. "+objpath)
-
+            raise IsADirectoryError("IRODS FS DIFF: object exists already as collection. " + objpath)
         if not os.path.isfile(fspath) and self._ses_man.session.data_objects.exists(objpath):
             return ([], [], [objpath], [])
-
-        elif not self._ses_man.session.data_objects.exists(objpath) and os.path.isfile(fspath):
+        if not self._ses_man.session.data_objects.exists(objpath) and os.path.isfile(fspath):
             return ([], [fspath], [], [])
 
         # both, file and object exist
@@ -583,11 +608,11 @@ class DataOperation(object):
                     try:
                         self._ses_man.session.data_objects.get(coll.path + '/' + ipartialpath).chksum()
                         objcheck = self._ses_man.session.data_objects.get(
-                                    coll.path + '/' + ipartialpath).checksum
+                            coll.path + '/' + ipartialpath).checksum
                     except Exception:
                         logging.info('No checksum for %s/%s', coll.path, ipartialpath)
                         diff.append((coll.path + '/' + ipartialpath,
-                                    os.path.join(dirpath, locpartialpath)))
+                                     os.path.join(dirpath, locpartialpath)))
                         continue
                 if objcheck.startswith("sha2"):
                     sha2obj = base64.b64decode(objcheck.split('sha2:')[1])
@@ -618,7 +643,7 @@ class DataOperation(object):
             irodsonly[i] = irodsonly[i].replace(os.sep, "/")
         return (diff, list(set(list_dir).difference(listcoll)), irodsonly, same)
 
-    def delete_data(self, item: None):
+    def delete_data(self, item: irods.collection.iRODSCollection):
         """
         Delete a data object or a collection recursively.
         Parameters
@@ -639,7 +664,7 @@ class DataOperation(object):
             try:
                 item.unlink(force=True)
             except irods.exception.CAT_NO_ACCESS_PERMISSION as cnap:
-                print("ERROR IRODS DELETE: no permissions "+item.path)
+                print("ERROR IRODS DELETE: no permissions " + item.path)
                 raise cnap
 
     def get_irods_size(self, path_names: list) -> int:
