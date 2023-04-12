@@ -67,7 +67,7 @@ class TestDataOperations:
                     attrs_resource_mock={'resource_space.return_value': all_free_space}
                 )
                 class_under_test.is_collection = MagicMock(return_value=True)
-                class_under_test.diff_obj_file = MagicMock(return_value=([], [], [], []))
+                class_under_test.diff_obj_file = MagicMock(return_value=([], [], []))
                 mock_localpath.return_value.is_file = MagicMock(return_value=True)
                 mock_localpath.return_value.is_dir = MagicMock(return_value=False)
                 class_under_test.upload_data(source="/mocked/path/to/file", destination=MagicMock(),
@@ -83,7 +83,7 @@ class TestDataOperations:
                 attrs_resource_mock={'resource_space.return_value': 100}
             )
             class_under_test.is_collection = MagicMock(return_value=True)
-            class_under_test.diff_obj_file = MagicMock(return_value=([], [file], [], []))
+            class_under_test.diff_obj_file = MagicMock(return_value=([], [file], []))
             class_under_test.irods_put = Mock()
             class_under_test.upload_data(source=file, destination=MagicMock(),
                                          res_name="res_name", size=10, buff=0)
@@ -156,7 +156,7 @@ class TestDataOperations:
                             class_under_test, _, _ = setup_data_operation()
                             class_under_test.is_dataobject_or_collection = Mock(return_value=True)
                             class_under_test.is_dataobject = Mock(return_value=True)
-                            class_under_test.diff_obj_file = Mock(return_value=([], [], [], []))
+                            class_under_test.diff_obj_file = Mock(return_value=([], [], []))
                             class_under_test.download_data(source=sourceMock, destination=destMock, size=100)
 
     def test_download_data_file_no_free_space_force(self):
@@ -178,7 +178,7 @@ class TestDataOperations:
                         class_under_test, _, _ = setup_data_operation()
                         class_under_test.is_dataobject_or_collection = Mock(return_value=True)
                         class_under_test.is_dataobject = Mock(return_value=True)
-                        class_under_test.diff_obj_file = Mock(return_value=([], [], [irods_source_path], []))
+                        class_under_test.diff_obj_file = Mock(return_value=([], [], [irods_source_path]))
                         class_under_test.irods_get = Mock()
                         class_under_test.download_data(source=source_mock, destination=dest_mock, size=100, force=True)
                         class_under_test.irods_get.assert_called_once()
@@ -203,7 +203,7 @@ class TestDataOperations:
                         class_under_test, _, _ = setup_data_operation()
                         class_under_test.is_dataobject_or_collection = Mock(return_value=True)
                         class_under_test.is_dataobject = Mock(return_value=False)
-                        class_under_test.diff_irods_localfs = Mock(return_value=([], [], ['file_1', 'file_2'], []))
+                        class_under_test.diff_irods_localfs = Mock(return_value=([], [], ['file_1', 'file_2']))
                         class_under_test.irods_get = Mock()
                         class_under_test.download_data(source=source_mock, destination=dest_mock, size=100, force=True)
                         ## To much path manipulation going on to mock and check args
@@ -236,7 +236,7 @@ class TestDataOperations:
             , 'session.data_objects.exists.return_value': True})
         with patch('os.path.isfile', **{'return_value': False}):
             with patch('os.path.isdir', **{'return_value': False}):
-                diff, only_fs, only_irods, same = class_under_test.diff_obj_file(obj_path, localpath_dir, "checksum")
+                diff, only_fs, only_irods, = class_under_test.diff_obj_file(obj_path, localpath_dir, "checksum")
                 assert only_irods == [obj_path]
 
     def test_obj_file_objpath_exists_locally_but_not_in_irods(self):
@@ -246,7 +246,7 @@ class TestDataOperations:
             , 'session.data_objects.exists.return_value': False})
         with patch('os.path.isfile', **{'return_value': True}):
             with patch('os.path.isdir', **{'return_value': False}):
-                diff, only_fs, only_irods, same = class_under_test.diff_obj_file(obj_path, localpath_dir, "checksum")
+                diff, only_fs, only_irods = class_under_test.diff_obj_file(obj_path, localpath_dir, "checksum")
                 assert only_fs == [localpath_dir]
 
     def test_obj_file_objpath_scope_size(self):
@@ -256,5 +256,5 @@ class TestDataOperations:
             , 'session.data_objects.exists.return_value': False})
         with patch('os.path.isfile', **{'return_value': True}):
             with patch('os.path.isdir', **{'return_value': False}):
-                diff, only_fs, only_irods, same = class_under_test.diff_obj_file(obj_path, localpath_dir, "checksum")
+                diff, only_fs, only_irods = class_under_test.diff_obj_file(obj_path, localpath_dir, "checksum")
                 assert only_fs == [localpath_dir]

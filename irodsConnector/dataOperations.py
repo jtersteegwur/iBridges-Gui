@@ -412,7 +412,7 @@ class DataOperation(object):
         # Only download if not present or difference in files.
         if diffs is None:
             if self.is_dataobject(source):
-                diff, _, only_irods, _ = self.diff_obj_file(source_path, cmp_path, scope="checksum")
+                diff, _, only_irods = self.diff_obj_file(source_path, cmp_path, scope="checksum")
             else:
                 diff, _, only_irods = self.diff_irods_localfs(source, cmp_path, scope="checksum")
         else:
@@ -524,40 +524,17 @@ class DataOperation(object):
 
         # both, file and object exist
         obj = self._ses_man.session.data_objects.get(objpath)
+        empty = ([], [], [])
+        result = empty
         if scope == "size":
-            objsize = obj.size
-            fsize = os.path.getsize(fspath)
-            if objsize != fsize:
-                return ([(objpath, fspath)], [])
-            else:
-                return ([], [], [])
+            if obj.size != os.path.getsize(fspath):
+                result = ([(objpath, fspath)], [],[])
         elif scope == "checksum":
-            objcheck = obj.checksum
-            if objcheck is None:
-                try:
-                    obj.chksum()
-                    objcheck = obj.checksum
-                except Exception:
-                    logging.info('No checksum for %s', obj.path)
-                    return ([(objpath, fspath)], [], [])
-            if objcheck.startswith("sha2"):
-                sha2obj = base64.b64decode(objcheck.split('sha2:')[1])
-                with open(fspath, "rb") as f:
-                    stream = f.read()
-                    sha2 = hashlib.sha256(stream).digest()
-                if sha2obj != sha2:
-                    return ([(objpath, fspath)], [])
-                else:
-                    return ([], [], [])
-            elif objcheck:
-                # md5
-                with open(fspath, "rb") as f:
-                    stream = f.read()
-                    md5 = hashlib.md5(stream).hexdigest()
-                if objcheck != md5:
-                    return ([(objpath, fspath)], [])
-                else:
-                    return ([], [], [])
+            checksums_are_different = self.compare_checksum_difference(obj, fspath)
+            if checksums_are_different:
+                result =  ([(objpath, fspath)], [],[])
+        return result
+
 
     def diff_irods_localfs(self, coll: irods.collection.Collection,
                            dirpath: str, scope: str = "size") -> tuple:
@@ -573,7 +550,7 @@ class DataOperation(object):
             Syncing scope can be 'size' or 'checksum'
         Returns
         ----------
-
+        ([different], [only_local], [only_irods])
         '''
 
 
@@ -583,11 +560,11 @@ class DataOperation(object):
             if not os.path.isdir(dirpath):
                 raise IsADirectoryError("IRODS FS DIFF: directory is a file.")
 
-        list_dir = self._get_files_relative_to_folder(dirpath)
-        list_coll = self._get_dataobjects_relative_to_collection(coll)
+        local_files_to_diff = self._get_files_relative_to_folder(dirpath)
+        data_objects_to_diff = self._get_dataobjects_relative_to_collection(coll)
 
         diff = []
-        for locpartialpath in set(list_dir).intersection(list_coll):
+        for locpartialpath in set(local_files_to_diff).intersection(data_objects_to_diff):
             ipartialpath = locpartialpath.replace(os.sep, "/")
             irods_path = coll.path + '/' + ipartialpath
             data_object = self._ses_man.session.data_objects.get(irods_path)
@@ -597,25 +574,8 @@ class DataOperation(object):
                 if data_object.size != os.path.getsize(local_path):
                     diff.append(irods_and_local_path)
             elif scope == "checksum":
-                objcheck = data_object.checksum
-                extracted_checksum = None
-                used_objcheck = None
-                force_add = False
-                if objcheck is None:
-                    try:
-                        data_object.chksum()
-                        objcheck = data_object.checksum
-                    except irods.manager.data_object_manager.Server_Checksum_Warning:
-                        logging.info('No checksum for %s/%s', coll.path, ipartialpath)
-                        force_add = True
-                if objcheck.startswith("sha2"):
-                    used_objcheck = base64.b64decode(objcheck.split('sha2:')[1])
-                    extracted_checksum = self.extract_checksum(local_path, lambda opened_stream: hashlib.sha256(opened_stream).digest())
-                elif objcheck:
-                    used_objcheck = objcheck
-                    extracted_checksum = self.extract_checksum(local_path, lambda opened_stream: hashlib.md5(opened_stream).hexdigest())
-                checksums_are_different = (extracted_checksum != used_objcheck)
-                if force_add or checksums_are_different:
+                should_add = self.compare_checksum_difference(data_object, local_path)
+                if should_add:
                     diff.append(irods_and_local_path)
             else:  # same paths, no scope
                 diff.append(irods_and_local_path)
@@ -623,10 +583,34 @@ class DataOperation(object):
         # adding files that are not on iRODS, only present on local FS
         # adding files that are not on local FS, only present in iRODS
         # adding files that are stored on both devices with the same checksum/size
-        irodsonly = list(set(list_coll).difference(list_dir))
+        irodsonly = list(set(data_objects_to_diff).difference(local_files_to_diff))
         for i, _ in enumerate(irodsonly):
             irodsonly[i] = irodsonly[i].replace(os.sep, "/")
-        return (diff, list(set(list_dir).difference(list_coll)), irodsonly)
+        return (diff, list(set(local_files_to_diff).difference(data_objects_to_diff)), irodsonly)
+
+    def compare_checksum_difference(self, data_object, local_path):
+        objcheck = data_object.checksum
+        extracted_checksum = None
+        used_objcheck = None
+        force_difference = False
+        if objcheck is None:
+            try:
+                data_object.chksum()
+                objcheck = data_object.checksum
+            except irods.manager.data_object_manager.Server_Checksum_Warning:
+                logging.info('No checksum for %s', data_object.path)
+                force_difference = True
+        if objcheck.startswith("sha2"):
+            used_objcheck = base64.b64decode(objcheck.split('sha2:')[1])
+            extracted_checksum = self.extract_checksum(local_path,
+                                                       lambda opened_stream: hashlib.sha256(opened_stream).digest())
+        elif objcheck:
+            used_objcheck = objcheck
+            extracted_checksum = self.extract_checksum(local_path,
+                                                       lambda opened_stream: hashlib.md5(opened_stream).hexdigest())
+        checksums_are_different = (extracted_checksum != used_objcheck)
+        should_add = force_difference or checksums_are_different
+        return should_add
 
     def extract_checksum(self, local_path, used_digest):
         with open(local_path, "rb") as f:
