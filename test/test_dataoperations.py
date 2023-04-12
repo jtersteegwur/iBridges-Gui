@@ -1,5 +1,6 @@
 """ Tests pertaining to irodsConnector.dataOperations """
 import shutil
+import sys
 from unittest.mock import MagicMock, Mock, patch, ANY, call
 from pytest import raises
 from irods.exception import CollectionDoesNotExist

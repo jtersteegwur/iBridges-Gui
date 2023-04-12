@@ -45,7 +45,7 @@ class TestUtils:
         path = utils.utils.LocalPath('.')
         assert path._posix == is_posix
         assert isinstance(path.path, pathlib.Path)
-        assert path.resolve() == path
+        assert path.resolve() == path.absolute()
 
     def test_json_config(self):
         filename = './config.json'
