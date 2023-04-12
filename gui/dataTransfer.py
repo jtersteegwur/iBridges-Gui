@@ -236,9 +236,7 @@ class getDataState(QObject):
                         subColl = None
                     (diff, onlyFS, onlyIrods, _) = self.ic.diff_irods_localfs(subColl, self.localFsPath, scope="checksum")
                 elif os.path.isfile(self.localFsPath):
-                    (diff, onlyFS, onlyIrods, _) = self.ic.diff_obj_file(
-                                                        newPath, 
-                                                        self.localFsPath, scope="checksum")
+                    (diff, onlyFS, onlyIrods, _) = self.ic.diff_obj_file(newPath, self.localFsPath, scope="checksum")
                 self.updLabels.emit(len(onlyFS), len(diff))
             else:
                 # Data is placed inside fsDir, check if obj or coll is inside
@@ -248,12 +246,10 @@ class getDataState(QObject):
                         FsPath = None
                     else:
                         FsPath = newPath
-                    (diff, onlyFS, onlyIrods, _) = self.ic.diff_irods_localfs(
-                                                  self.coll, FsPath, scope="checksum")                        
+                    (diff, onlyFS, onlyIrods, _) = self.ic.diff_irods_localfs( self.coll, FsPath, scope="checksum")
                 # elif self.ic.dataobject_exists(self.coll.path):
                 else:
-                    (diff, onlyFS, onlyIrods, _) = self.ic.diff_obj_file(
-                                                   self.coll.path, newPath, scope="checksum")
+                    (diff, onlyFS, onlyIrods, _) = self.ic.diff_obj_file(self.coll.path, newPath, scope="checksum")
                 self.updLabels.emit(len(onlyIrods), len(diff))
         except:
             logging.exception("dataTransfer.py: Error in getDataState")
