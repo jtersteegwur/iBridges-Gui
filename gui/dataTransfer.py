@@ -224,7 +224,7 @@ class getDataState(QObject):
 
     def run(self):
         # Diff
-        diff, onlyFS, onlyIrods, _ = [], [], [], []
+        diff, onlyFS, onlyIrods = [], [], []
         try:
             if self.upload:
                 # Data is placed inside of coll, check if dir or file is inside

@@ -29,6 +29,13 @@ class TestUtils:
         assert path._posix == is_posix
         assert isinstance(path.path, pathlib.PurePath)
 
+    def test_partial_pure_path_equality(self):
+        windows_notation = "\\some\\folder\\structure\\file.txt"
+        linux_notation = windows_notation.replace("\\", "/")
+        windows_path = utils.utils.PurePath(windows_notation)
+        linux_path = utils.utils.PurePath(linux_notation)
+        assert windows_path == linux_path
+
     def test_irods_path(self):
         is_posix = True
         path = utils.utils.IrodsPath('.')

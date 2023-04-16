@@ -3,7 +3,12 @@
 """
 
 # def get_diff_download(source, target)
+## Should result in a list[SyncResult] comprising of:
+#### Files that are different
+#### Files that are present on target, but not on source
 # def get_diff_upload(source, target)
+#### Files that are different
+#### Files that are different on source, but not on target
 # def get_diff_both(source, target)
 
 class SyncResult:

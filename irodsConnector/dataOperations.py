@@ -12,7 +12,7 @@ import irods.exception
 import irodsConnector.keywords as kw
 from irodsConnector.resource import NotEnoughFreeSpace, Resource
 from irodsConnector.session import Session
-from utils import utils
+from utils import utils, sync_result
 
 NO_WRITE_ACCESS = 'No rights to write to destination.'
 
@@ -319,7 +319,7 @@ class DataOperation(object):
             res_name = self._ses_man.default_resc
         if diffs is None:
             if source.is_file():
-                diff, only_fs, _= self.diff_obj_file(cmp_path, source, scope='checksum')
+                diff, only_fs, _ = self.diff_obj_file(cmp_path, source, scope='checksum')
             else:
                 cmp_coll = self.ensure_coll(cmp_path)
                 diff, only_fs, _ = self.diff_irods_localfs(cmp_coll, source)
@@ -422,10 +422,10 @@ class DataOperation(object):
             space = disk_usage(destination).free
             if size > (space - buff):
                 logging.info(
-                    'ERROR iRODS download: '+'Not enough space on local disk.',
+                    'ERROR iRODS download: ' + 'Not enough space on local disk.',
                     exc_info=True)
                 raise NotEnoughFreeSpace(
-                    'ERROR iRODS download: '+'Not enough space on local disk.')
+                    'ERROR iRODS download: ' + 'Not enough space on local disk.')
         # NOT the same force flag.  This overwrites the local file by default.
         # TODO should there be an option/switch for this 'clobber'ing?
         options = {kw.FORCE_FLAG_KW: ''}
@@ -474,7 +474,6 @@ class DataOperation(object):
                 yield x
         yield path, collections, data_objects
 
-
     def recursive_upload(self, source: str, target: str) -> irods.collection.Collection:
         normalized_source_directories = []
         result = self.ensure_coll(target)
@@ -483,7 +482,7 @@ class DataOperation(object):
             src_dirs.sort()
             target_in_irods = (target + src_root[len(source):] + os.sep).replace(os.sep, '/')
             normalized_src_dirs_as_in_irods = [target_in_irods + source_dir for source_dir in src_dirs]
-            files_ = [src_root + os.path.sep +  file for file in src_files]
+            files_ = [src_root + os.path.sep + file for file in src_files]
             files_in_folder[target_in_irods] = files_
             normalized_source_directories.extend(normalized_src_dirs_as_in_irods)
 
@@ -491,9 +490,10 @@ class DataOperation(object):
             [executor.submit(self.ensure_coll, target_col) for target_col in normalized_source_directories]
         with ThreadPoolExecutor(42) as file_executor:
             for file_destination in files_in_folder:
-                [file_executor.submit(self.irods_put, independent_file, file_destination) 
+                [file_executor.submit(self.irods_put, independent_file, file_destination)
                  for independent_file in files_in_folder[file_destination]]
         return result
+
     def diff_obj_file(self, objpath: str, fspath: str, scope: str = "size") -> tuple:
         """
         Compares and iRODS object to a file system file.
@@ -528,13 +528,34 @@ class DataOperation(object):
         result = empty
         if scope == "size":
             if obj.size != os.path.getsize(fspath):
-                result = ([(objpath, fspath)], [],[])
+                result = ([(objpath, fspath)], [], [])
         elif scope == "checksum":
             checksums_are_different = self.compare_checksum_difference(obj, fspath)
             if checksums_are_different:
-                result =  ([(objpath, fspath)], [],[])
+                result = ([(objpath, fspath)], [], [])
         return result
 
+    def get_diff_download(self, src: str, target: str) -> list[sync_result.SyncResult]:
+        # assume src is a local path for now
+        result = []
+        local_source_files = self._get_files_relative_to_folder_as_posix(src)
+        # assume target is always irods
+        target_collection = self.get_collection(target)
+        target_files = self._get_dataobjects_relative_to_collection(target_collection)
+        files_to_always_download = (set(target_files).difference(local_source_files))
+        files_to_check_for_difference = (set(local_source_files).intersection(target_files))
+        intersection = self.check_diffs_in_intersection(target, src, files_to_check_for_difference, "checksum")
+        intersect_sync_result = [sync_result.SyncResult(intersect[1], intersect[0], 0) for intersect in intersection]
+        download_ = [sync_result.SyncResult(src + always_download, target + always_download, 0) for
+                     always_download in files_to_always_download]
+        result.extend(download_)
+        result.extend(intersect_sync_result)
+        for syncresult in result:
+            try:
+                syncresult.source_file_size = self.get_irods_size([syncresult.target_path])
+            except irods.exception.iRODSException:
+                syncresult.source_file_size = 0
+        return result
 
     def diff_irods_localfs(self, coll: irods.collection.Collection,
                            dirpath: str, scope: str = "size") -> tuple:
@@ -553,22 +574,31 @@ class DataOperation(object):
         ([different], [only_local], [only_irods])
         '''
 
-
         if dirpath is not None:
             if not os.access(dirpath, os.R_OK):
                 raise PermissionError("IRODS FS DIFF: No rights to write to destination.")
             if not os.path.isdir(dirpath):
                 raise IsADirectoryError("IRODS FS DIFF: directory is a file.")
 
-        local_files_to_diff = self._get_files_relative_to_folder(dirpath)
+        local_files_to_diff = self._get_files_relative_to_folder_as_posix(dirpath)
         data_objects_to_diff = self._get_dataobjects_relative_to_collection(coll)
 
+        intersection = set(local_files_to_diff).intersection(data_objects_to_diff)
+        coll_path = coll.path
+        diff = self.check_diffs_in_intersection(coll_path, dirpath, intersection, scope)
+
+        # adding files that are not on iRODS, only present on local FS
+        # adding files that are not on local FS, only present in iRODS
+        # adding files that are stored on both devices with the same checksum/size
+        irodsonly = list(set(data_objects_to_diff).difference(local_files_to_diff))
+        return (diff, list(set(local_files_to_diff).difference(data_objects_to_diff)), irodsonly)
+
+    def check_diffs_in_intersection(self, coll_path, dirpath, intersection, scope):
         diff = []
-        for locpartialpath in set(local_files_to_diff).intersection(data_objects_to_diff):
-            ipartialpath = locpartialpath.replace(os.sep, "/")
-            irods_path = coll.path + '/' + ipartialpath
+        for locpartialpath in intersection:
+            irods_path = coll_path + locpartialpath
+            local_path = dirpath + locpartialpath.replace('/', os.sep)
             data_object = self._ses_man.session.data_objects.get(irods_path)
-            local_path = os.path.join(dirpath, locpartialpath)
             irods_and_local_path = (irods_path, local_path)
             if scope == "size":
                 if data_object.size != os.path.getsize(local_path):
@@ -579,14 +609,7 @@ class DataOperation(object):
                     diff.append(irods_and_local_path)
             else:  # same paths, no scope
                 diff.append(irods_and_local_path)
-
-        # adding files that are not on iRODS, only present on local FS
-        # adding files that are not on local FS, only present in iRODS
-        # adding files that are stored on both devices with the same checksum/size
-        irodsonly = list(set(data_objects_to_diff).difference(local_files_to_diff))
-        for i, _ in enumerate(irodsonly):
-            irodsonly[i] = irodsonly[i].replace(os.sep, "/")
-        return (diff, list(set(local_files_to_diff).difference(data_objects_to_diff)), irodsonly)
+        return diff
 
     def compare_checksum_difference(self, data_object, local_path):
         objcheck = data_object.checksum
@@ -597,10 +620,10 @@ class DataOperation(object):
             try:
                 data_object.chksum()
                 objcheck = data_object.checksum
-            except irods.manager.data_object_manager.Server_Checksum_Warning:
+            except (irods.exception.iRODSException, KeyError):
                 logging.info('No checksum for %s', data_object.path)
                 force_difference = True
-        if objcheck.startswith("sha2"):
+        elif objcheck.startswith("sha2"):
             used_objcheck = base64.b64decode(objcheck.split('sha2:')[1])
             extracted_checksum = self.extract_checksum(local_path,
                                                        lambda opened_stream: hashlib.sha256(opened_stream).digest())
@@ -621,21 +644,28 @@ class DataOperation(object):
     def _get_dataobjects_relative_to_collection(self, coll: irods.collection.Collection):
         if coll is None:
             return []
-        listcoll = []
+        result = []
         if coll is not None:
             for root, _, objects in coll.walk():
                 for obj in objects:
-                    listcoll.append(os.path.join(root.path.split(coll.path)[1], obj.name).strip('/'))
-        return listcoll
+                    pure_path = (root.path.split(coll.path)[1] + '/' + obj.name)
+                    # pure_path = utils.PurePath(root.path.split(coll.path)[1]).joinpath(obj.name)
+                    strip = os.path.join(root.path.split(coll.path)[1], obj.name).strip('/')
+                    result.append(pure_path)
+                    # result.append(strip)
+        return result
 
-    def _get_files_relative_to_folder(self, dirpath: str):
+    def _get_files_relative_to_folder_as_posix(self, dirpath: str):
         if dirpath is None:
             return []
-        list_dir = []
+        result = []
         for root, _, files in os.walk(dirpath, topdown=False):
             for name in files:
-                list_dir.append(os.path.join(root.split(dirpath)[1], name).strip(os.sep))
-        return list_dir
+                dirpath_ = root.split(dirpath)[1]
+                pure_path = (dirpath_.replace(os.sep, '/') + '/' + name)
+                result.append(pure_path)
+                # result.append(strip)
+        return result
 
     def delete_data(self, item: irods.collection.iRODSCollection):
         """
