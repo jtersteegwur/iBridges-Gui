@@ -535,6 +535,25 @@ class DataOperation(object):
                 result = ([(objpath, fspath)], [], [])
         return result
 
+
+    def get_diff_upload(self, src: str, target: str) -> list[sync_result.SyncResult]:
+        # assume src is a local path for now
+        result = []
+        local_source_files = self._get_files_relative_to_folder_as_posix(src)
+        # assume target is always irods
+        target_collection = self.get_collection(target)
+        target_files = self._get_dataobjects_relative_to_collection(target_collection)
+        files_to_always_upload = (set(local_source_files).difference(target_files))
+        files_to_check_for_difference = (set(local_source_files).intersection(target_files))
+        intersection = self.check_diffs_in_intersection(target, src, files_to_check_for_difference, "checksum")
+        intersect_sync_result = [sync_result.SyncResult(intersect[1], intersect[0], 0) for intersect in intersection]
+        download_ = [sync_result.SyncResult(src + always_download, target + always_download, 0) for
+                     always_download in files_to_always_upload]
+        result.extend(download_)
+        result.extend(intersect_sync_result)
+        for syncresult in result:
+            syncresult.source_file_size = os.path.getsize(syncresult.source_path)
+        return result
     def get_diff_download(self, src: str, target: str) -> list[sync_result.SyncResult]:
         # assume src is a local path for now
         result = []
