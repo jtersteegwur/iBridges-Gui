@@ -232,8 +232,8 @@ class Session(object):
         """
         if self._session is None:
             options = {
-                'irods_env_file': self._irods_env_file,
-                'application_name': application_name,
+                #'irods_env_file': self._irods_env_file,
+                #'application_name': application_name,
             }
             if self.ienv is not None:
                 options.update(self.ienv.copy())
@@ -243,7 +243,7 @@ class Session(object):
             cached_pass = self.password
             if given_pass != cached_pass:
                 options['password'] = given_pass
-            self._session = self._get_irods_session(options)
+            self._session = self._get_irods_session(options, self.irods_env_file)
             try:
                 # Check for good authentication and cache PAM password
                 if 'password' in options:
@@ -266,7 +266,7 @@ class Session(object):
             return self._session
 
     @staticmethod
-    def _get_irods_session(options):
+    def _get_irods_session(options, irods_env_file):
         """Run through different types of authentication methods and
         instantiate an iRODS session.
 
@@ -285,7 +285,7 @@ class Session(object):
             try:
                 print('AUTH FILE SESSION')
                 session = irods.session.iRODSSession(
-                    irods_env_file=options['irods_env_file'])
+                    irods_env_file=irods_env_file)
                 _ = session.server_version
                 return session
             except Exception as error:
