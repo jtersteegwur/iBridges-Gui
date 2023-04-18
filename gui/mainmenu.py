@@ -57,6 +57,7 @@ class mainmenu(PyQt6.QtWidgets.QMainWindow, gui.ui_files.MainMenu.Ui_MainWindow)
                 'tabCreateTicket': self.setupTabCreateTicket,
                 'tabAmberWorkflow': self.setupTabAmberWorkflow,
                 'tabInfo': self.setupTabInfo,
+                'tabNpecRules': self.setupTabNpecRules
             }
             found = ienv.get('ui_tabs', False)
             if not found:
@@ -111,6 +112,10 @@ class mainmenu(PyQt6.QtWidgets.QMainWindow, gui.ui_files.MainMenu.Ui_MainWindow)
     def setupTabInfo(self, ic, ienv):
         self.irodsInfo = gui.irodsInfo.irodsInfo(ic)
         self.tabWidget.addTab(self.irodsInfo, "Info")
+
+    def setupTabNpecRules(self, ic, ienv):
+        self.npecRules = gui.npecRules.npecRules(ic)
+        self.tabWidget.addTab(self.npecRules, "NPEC Rules")
 
     # Connect functions
     def programExit(self):

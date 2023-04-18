@@ -15,5 +15,6 @@ from . import IrodsUpDownload
 from . import amberWorkflow
 # from . import mainmenu
 from .mainmenu import mainmenu
+from . import npecRules
 from . import popupWidgets
 from . import ui_files
