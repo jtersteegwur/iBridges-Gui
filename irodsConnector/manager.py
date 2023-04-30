@@ -6,6 +6,7 @@ import irods.resource
 import irods.session
 import irodsConnector
 import irodsConnector.keywords as kw
+import utils.sync_result
 
 
 class IrodsConnector(object):
@@ -123,6 +124,19 @@ class IrodsConnector(object):
                            dirpath: str, scope: str = "size") -> tuple:
         return self._data_op.diff_irods_localfs(coll, dirpath, scope)
 
+    def get_diff_download(self, source:str, target:str) -> list[utils.sync_result.SyncResult]:
+        return self._data_op.get_diff_download(source, target)
+
+    def get_diff_upload(self, source: str, target: str) -> list[utils.sync_result.SyncResult]:
+        return self._data_op.get_diff_upload(source, target)
+
+    def download_data_using_sync_result(self, sync_result_list: list[utils.sync_result.SyncResult],
+                                        minimal_free_space_on_disk: int, check_free_space: bool):
+        return self._data_op.download_data_using_sync_result(sync_result_list,minimal_free_space_on_disk,check_free_space)
+
+    def upload_data_using_sync_result(self, sync_result_list: list[utils.sync_result.SyncResult], resource_name: str,
+                                      minimal_free_space_on_server: int, check_free_space: bool):
+        return self._data_op.upload_data_using_sync_result(sync_result_list, resource_name, minimal_free_space_on_server, check_free_space)
     def download_data(self, source: None, destination: str,
                       size: int, buff: int = kw.BUFF_SIZE, force: bool = False, diffs: tuple = None):
         if self._icommands.icommands():

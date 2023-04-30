@@ -14,6 +14,8 @@ from irodsConnector.resource import NotEnoughFreeSpace, Resource
 from irodsConnector.session import Session
 from utils import utils, sync_result
 
+SOURCE_NOT_FOUND = 'ERROR iRODS upload: not a valid source path'
+
 NO_WRITE_ACCESS = 'No rights to write to destination.'
 
 NOT_DIRECTORY = 'destination path does not exist or is not directory'
@@ -274,6 +276,35 @@ class DataOperation(object):
         })
         self._ses_man.session.data_objects.get(irods_path, local_path, **options)
 
+    def download_data_using_sync_result(self, sync_result_list: list[sync_result.SyncResult],
+                                        minimal_free_space_on_disk: int, check_free_space: bool):
+        options = {kw.FORCE_FLAG_KW:''}
+        for item in sync_result_list:
+            local_destination_path = utils.LocalPath(item.source_path)
+            utils.ensure_dir(local_destination_path.parent)
+            free = disk_usage(local_destination_path.parent).free
+            if check_free_space:
+                if (free - item.source_file_size) > minimal_free_space_on_disk:
+                    self._ses_man.session.data_objects.get(item.target_path, item.source_path, **options)
+            else:
+                self._ses_man.session.data_objects.get(item.target_path, item.source_path, **options)
+
+    def upload_data_using_sync_result(self, sync_result_list: list[sync_result.SyncResult], resource_name: str,
+                                      minimal_free_space_on_server: int, check_free_space: bool):
+        for item in sync_result_list:
+            if not utils.LocalPath(item.source_path).exists():
+                raise FileNotFoundError(SOURCE_NOT_FOUND)
+            irods_path = utils.IrodsPath(item.target_path)
+            if check_free_space:
+                free_space = self._res_man.resource_space(resource_name)
+                if item.source_file_size > (free_space - minimal_free_space_on_server):
+                    logging.info('ERROR iRODS upload: Not enough free space on resource.', exc_info=True)
+                    raise NotEnoughFreeSpace('ERROR iRODS upload: Not enough free space on resource.')
+            deepest_collection = irods_path.parent
+            # TODO optimisation:fetch all collections first, ensure uniqueness, ensure 'deepest' collections recursivly
+            self.ensure_coll(deepest_collection)
+            self.irods_put(item.source_path, item.target_path)
+
     def upload_data(self, source: str, destination: irods.collection.Collection,
                     res_name: str, size: int, buff: int = kw.BUFF_SIZE, force: bool = False, diffs: tuple = None):
         """Upload data from the local `source` to the iRODS
@@ -313,8 +344,7 @@ class DataOperation(object):
             else:
                 raise irods.exception.CollectionDoesNotExist(destination)
         else:
-            raise FileNotFoundError(
-                'ERROR iRODS upload: not a valid source path')
+            raise FileNotFoundError(SOURCE_NOT_FOUND)
         if res_name in [None, '']:
             res_name = self._ses_man.default_resc
         if diffs is None:
@@ -535,39 +565,95 @@ class DataOperation(object):
                 result = ([(objpath, fspath)], [], [])
         return result
 
-
     def get_diff_upload(self, src: str, target: str) -> list[sync_result.SyncResult]:
+        """
+
+        target: path to where it should be uploaded
+        """
+
         # assume src is a local path for now
+        local_src_folder = ''
+        local_source_files = []
+        target_collection = ''
+        target_files = []
+        if target is None:
+            raise ValueError("No target specified")
+
+        if os.path.isdir(src):
+            if self._ses_man.session.data_objects.exists(target):
+                raise ValueError(f"{src} exists as a folder locally, while {target} exists as a data object remotely")
+            local_src_folder = src
+            local_source_files = self._get_files_relative_to_folder_as_posix(local_src_folder)
+            target_collection = target
+            if self._ses_man.session.collections.exists(target):
+                target_files = self._get_dataobjects_relative_to_collection(self.get_collection(target_collection))
+        elif os.path.isfile(src):
+            if self._ses_man.session.collections.exists(target):
+                raise ValueError(f"{src} exists as a file locally, while {target} exists as a collection remotely")
+            local_src_folder = utils.LocalPath(src).parent
+            local_source_files = ['/' + utils.LocalPath(src).name]
+            target_collection = target.rsplit(local_source_files[0], 1)[0]
+            # This forces the file-compare
+            if self._ses_man.session.data_objects.exists(target):
+                target_files = local_source_files
+
         result = []
-        local_source_files = self._get_files_relative_to_folder_as_posix(src)
-        # assume target is always irods
-        target_collection = self.get_collection(target)
-        target_files = self._get_dataobjects_relative_to_collection(target_collection)
         files_to_always_upload = (set(local_source_files).difference(target_files))
         files_to_check_for_difference = (set(local_source_files).intersection(target_files))
-        intersection = self.check_diffs_in_intersection(target, src, files_to_check_for_difference, "checksum")
-        intersect_sync_result = [sync_result.SyncResult(intersect[1], intersect[0], 0) for intersect in intersection]
-        download_ = [sync_result.SyncResult(src + always_download, target + always_download, 0) for
-                     always_download in files_to_always_upload]
-        result.extend(download_)
+        intersection = self.check_diffs_in_intersection(target_collection, local_src_folder,
+                                                        files_to_check_for_difference, "checksum")
+        intersect_sync_result = [
+            sync_result.SyncResult(intersect[1], intersect[0], 0, sync_result.FileSyncMethod.UPDATE) for intersect in
+            intersection]
+        upload = [sync_result.SyncResult(local_src_folder + always_upload, target_collection + always_upload, 0,
+                                         sync_result.FileSyncMethod.CREATE) for
+                  always_upload in files_to_always_upload]
+        result.extend(upload)
         result.extend(intersect_sync_result)
         for syncresult in result:
             syncresult.source_file_size = os.path.getsize(syncresult.source_path)
         return result
+
     def get_diff_download(self, src: str, target: str) -> list[sync_result.SyncResult]:
-        # assume src is a local path for now
+
+        local_src_folder = ''
+        local_source_files = []
+        target_collection = ''
+        target_files = []
+
+        if target is None:
+            raise ValueError("No target specified")
+        if self._ses_man.session.data_objects.exists(target):
+            if os.path.isdir(src):
+                raise ValueError("src and target should both point to either files/dataobjects or folders/collections")
+            if os.path.exists(src):
+                local_source_files = ['/' + utils.LocalPath(src).name]
+            local_src_folder = utils.LocalPath(src).parent
+            target_collection = target.rsplit('/', 1)[0]
+            target_files = [target.split(target_collection,1)[1]]
+        elif self._ses_man.session.collections.exists(target):
+            if os.path.isfile(src):
+                raise ValueError("src and target should both point to either files/dataobjects or folders/collections")
+            if os.path.exists(src):
+                local_source_files = self._get_files_relative_to_folder_as_posix(src)
+            target_collection = target
+            target_files = self._get_dataobjects_relative_to_collection(self.get_collection(target_collection))
+            local_src_folder = utils.LocalPath(src)
+        else:
+            raise ValueError("requested data does not seem to exists.")
+
         result = []
-        local_source_files = self._get_files_relative_to_folder_as_posix(src)
-        # assume target is always irods
-        target_collection = self.get_collection(target)
-        target_files = self._get_dataobjects_relative_to_collection(target_collection)
-        files_to_always_download = (set(target_files).difference(local_source_files))
+        files_to_always_upload = (set(target_files).difference(local_source_files))
         files_to_check_for_difference = (set(local_source_files).intersection(target_files))
-        intersection = self.check_diffs_in_intersection(target, src, files_to_check_for_difference, "checksum")
-        intersect_sync_result = [sync_result.SyncResult(intersect[1], intersect[0], 0) for intersect in intersection]
-        download_ = [sync_result.SyncResult(src + always_download, target + always_download, 0) for
-                     always_download in files_to_always_download]
-        result.extend(download_)
+        intersection = self.check_diffs_in_intersection(target_collection, local_src_folder,
+                                                        files_to_check_for_difference, "checksum")
+        intersect_sync_result = [
+            sync_result.SyncResult(intersect[1], intersect[0], 0, sync_result.FileSyncMethod.UPDATE) for intersect in
+            intersection]
+        upload = [sync_result.SyncResult(local_src_folder + always_upload, target_collection + always_upload, 0,
+                                         sync_result.FileSyncMethod.CREATE) for
+                  always_upload in files_to_always_upload]
+        result.extend(upload)
         result.extend(intersect_sync_result)
         for syncresult in result:
             try:
@@ -602,9 +688,11 @@ class DataOperation(object):
         local_files_to_diff = self._get_files_relative_to_folder_as_posix(dirpath)
         data_objects_to_diff = self._get_dataobjects_relative_to_collection(coll)
 
-        intersection = set(local_files_to_diff).intersection(data_objects_to_diff)
-        coll_path = coll.path
-        diff = self.check_diffs_in_intersection(coll_path, dirpath, intersection, scope)
+        diff = []
+        if coll and dirpath:
+            intersection = set(local_files_to_diff).intersection(data_objects_to_diff)
+            coll_path = coll.path
+            diff = self.check_diffs_in_intersection(coll_path, dirpath, intersection, scope)
 
         # adding files that are not on iRODS, only present on local FS
         # adding files that are not on local FS, only present in iRODS
