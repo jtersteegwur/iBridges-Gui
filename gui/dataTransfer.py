@@ -49,6 +49,7 @@ class dataTransfer(QDialog, Ui_dataTransferState):
         self.addFiles = []
         self.addSize = 0
         self.diff = []
+        self.sync_list : list[utils.sync_result.SyncResult]= []
         self.updateFiles = []
         self.updateSize = 0
         self.force = ic.ienv.get('force_unknown_free_space', False)
@@ -106,7 +107,7 @@ class dataTransfer(QDialog, Ui_dataTransferState):
             self.statusLbl.setText(
                 f'Downloading... this might take a while. \nStarted {now}')
         self.thread = QThread()
-        if len(self.diff)+len(self.addFiles) == 0:
+        if len(self.sync_list) == 0:
             self.statusLbl.setText("Nothing to update.")
             self.loading_movie.stop()
             self.loadingLbl.setHidden(True)
@@ -114,7 +115,7 @@ class dataTransfer(QDialog, Ui_dataTransferState):
             self.worker = UpDownload(
                 self.ic, self.upload, self.localFsPath, self.coll,
                 total_size, self.resource, self.diff, self.addFiles,
-                self.force)
+                self.force, self.sync_list)
             self.worker.moveToThread(self.thread)
             self.thread.started.connect(self.worker.run)
             self.worker.finished.connect(self.thread.quit)
@@ -135,7 +136,7 @@ class dataTransfer(QDialog, Ui_dataTransferState):
         self.numDiffLabel.setText(f"{numDiff}")
         self.numAddLabel.setText(f"{numAdd}")
 
-    def updateUiWithDataState(self, addFiles, diff, addSize, updateSize):
+    def updateUiWithDataState(self, addFiles, diff, addSize, updateSize, sync_list: list[utils.sync_result.SyncResult]):
         """Callback for the getDataSize worker
 
         Parameters
@@ -144,6 +145,7 @@ class dataTransfer(QDialog, Ui_dataTransferState):
         diff
         addSize
         updateSize
+        sync_list
 
         Returns
         -------
@@ -155,6 +157,7 @@ class dataTransfer(QDialog, Ui_dataTransferState):
         # checksumSizeStr = self.bytesToStr(updateSize)
         self.ChecksumSizeLbl.setText(utils.utils.bytes_to_str(int(updateSize)))
         self.diff = diff
+        self.sync_list = sync_list
 
         self.addSize = addSize
         # newSizeStr = self.bytesToStr(addSize)
@@ -204,7 +207,7 @@ class getDataState(QObject):
     # Number of files
     updLabels = pyqtSignal(int, int)
     # Lists with size in bytes
-    finished = pyqtSignal(list, list, str, str)
+    finished = pyqtSignal(list, list, str, str, list)
 
     def __init__(self, ic, localFsPath, coll, upload):
         """
@@ -224,62 +227,70 @@ class getDataState(QObject):
 
     def run(self):
         # Diff
-        diff, onlyFS, onlyIrods, same = [], [], [], []
+        diff, only_fs, only_irods = [], [], []
+        upload_diff = []
         try:
             if self.upload:
                 # Data is placed inside of coll, check if dir or file is inside
-                newPath = self.coll.path + "/" + os.path.basename(self.localFsPath)
+                new_path = self.coll.path + "/" + os.path.basename(self.localFsPath)
+                total_new_files = 0
+                total_different_files = 0
                 if os.path.isdir(self.localFsPath):
-                    if self.ic.collection_exists(newPath):
-                        subColl = self.ic.get_collection(newPath)
+                    if self.ic.collection_exists(new_path):
+                        #TODO figure out if this ever different from new_path
+                        sub_coll_path = self.ic.get_collection(new_path).path
                     else:
-                        subColl = None
-                    (diff, onlyFS, onlyIrods, same) = self.ic.diff_irods_localfs(
-                                                  subColl, self.localFsPath, scope="checksum")
+                        sub_coll_path = new_path
+                    upload_diff: list[utils.sync_result.SyncResult] = self.ic.get_diff_upload(self.localFsPath, sub_coll_path)
+                    total_new_files = sum(1 for u_diff in upload_diff if
+                               u_diff.file_sync_method == utils.sync_result.FileSyncMethod.CREATE)
+                    total_different_files = len(upload_diff) - total_new_files
                 elif os.path.isfile(self.localFsPath):
-                    (diff, onlyFS, onlyIrods, same) = self.ic.diff_obj_file(
-                                                        newPath, 
-                                                        self.localFsPath, scope="checksum")
-                self.updLabels.emit(len(onlyFS), len(diff))
+                    upload_diff = self.ic.get_diff_upload(self.localFsPath, new_path)
+                    total_new_files = sum(1 for u_diff in upload_diff if
+                                          u_diff.file_sync_method == utils.sync_result.FileSyncMethod.CREATE)
+                    total_different_files = len(upload_diff) - total_new_files
+                self.updLabels.emit(total_new_files, total_different_files)
             else:
                 # Data is placed inside fsDir, check if obj or coll is inside
-                newPath = os.path.join(self.localFsPath, self.coll.name)
+                new_path = os.path.join(self.localFsPath, self.coll.name)
+                fs_path = new_path
                 if self.ic.collection_exists(self.coll.path):
-                    if not os.path.isdir(newPath):
-                        FsPath = None
-                    else:
-                        FsPath = newPath
-                    (diff, onlyFS, onlyIrods, same) = self.ic.diff_irods_localfs(
-                                                  self.coll, FsPath, scope="checksum")                        
-                # elif self.ic.dataobject_exists(self.coll.path):
+                    if not os.path.isdir(new_path):
+                        fs_path = None
+                    (diff, only_fs, only_irods) = self.ic.diff_irods_localfs( self.coll, fs_path, scope="checksum")
+                    download_diff = self.ic.get_diff_download(new_path, self.coll.path)
+                    pass
                 else:
-                    (diff, onlyFS, onlyIrods, same) = self.ic.diff_obj_file(
-                                                   self.coll.path, newPath, scope="checksum")
-                self.updLabels.emit(len(onlyIrods), len(diff))
-        except:
+                    (diff, only_fs, only_irods) = self.ic.diff_obj_file(self.coll.path, new_path, scope="checksum")
+                    download_diff = self.ic.get_diff_download(fs_path, self.coll.path)
+                    pass
+                total_new_files = sum(1 for d_diff in download_diff if
+                                      d_diff.file_sync_method == utils.sync_result.FileSyncMethod.CREATE)
+                total_different_files = len(download_diff) - total_new_files
+                self.updLabels.emit(total_new_files, total_different_files)
+        except Exception as exc:
             logging.exception("dataTransfer.py: Error in getDataState")
 
         # Get size 
         if self.upload:
-            fsDiffFiles = [d[1] for d in diff]
-            updateSize = utils.utils.get_local_size(fsDiffFiles)
-            fullOnlyFsPaths = [self.localFsPath+os.sep+d for d in onlyFS
-                               if not d.startswith('/') or ':' not in d]
-            fullOnlyFsPaths.extend(
-                [d for d in onlyFS if d.startswith('/') or ':' in d])
-            addSize = utils.utils.get_local_size(fullOnlyFsPaths)
-            print(str(fsDiffFiles)+" "+str(updateSize))
-            print(str(onlyFS)+" "+str(addSize))
-            self.finished.emit(onlyFS, diff, str(addSize), str(updateSize))
+            update_size = 0
+            add_size = 0
+            for item in upload_diff:
+                if item.file_sync_method == utils.sync_result.FileSyncMethod.CREATE:
+                    add_size += item.source_file_size
+                elif item.file_sync_method == utils.sync_result.FileSyncMethod.UPDATE:
+                    update_size += item.source_file_size
+            self.finished.emit(only_fs, diff, str(add_size), str(update_size), upload_diff)
         else:
             irodsDiffFiles = [d[0] for d in diff]
-            updateSize = self.ic.get_irods_size(irodsDiffFiles)
-            onlyIrodsFullPath = onlyIrods.copy()
+            update_size = self.ic.get_irods_size(irodsDiffFiles)
+            onlyIrodsFullPath = only_irods.copy()
             for i in range(len(onlyIrodsFullPath)):
-                if not onlyIrods[i].startswith(self.coll.path):
-                    onlyIrodsFullPath[i] = f'{self.coll.path}/{onlyIrods[i]}'
-            addSize = self.ic.get_irods_size(onlyIrodsFullPath)
-            self.finished.emit(onlyIrods, diff, str(addSize), str(updateSize))
+                if not only_irods[i].startswith(self.coll.path):
+                    onlyIrodsFullPath[i] = f'{self.coll.path}/{only_irods[i]}'
+            add_size = self.ic.get_irods_size(onlyIrodsFullPath)
+            self.finished.emit(only_irods, diff, str(add_size), str(update_size),download_diff)
 
 
 class UpDownload(QObject):
@@ -288,7 +299,7 @@ class UpDownload(QObject):
     """
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, ic, upload, localFS, Coll, totalSize, resource, diff, addFiles, force):
+    def __init__(self, ic, upload, localFS, Coll, totalSize, resource, diff, addFiles, force, sync_list):
         """
 
         Parameters
@@ -313,24 +324,17 @@ class UpDownload(QObject):
         self.diff = diff
         self.addFiles = addFiles
         # TODO prefer setting here?
+        self.sync_list = sync_list
         self.force = ic.ienv.get('force_unknown_free_space', force)
 
     def run(self):    
         try:
             if self.upload:
-                diffs = (self.diff, self.addFiles, [], [])
-                self.ic.upload_data(
-                    self.localFS, self.Coll, self.resource,
-                    int(self.totalSize), buff=1024**3,
-                    force=self.force, diffs=diffs)
+                self.ic.upload_data_using_sync_result(self.sync_list, self.resource, int(self.totalSize), not self.force)
                 self.finished.emit(True, "Upload finished")
             else:
-                diffs = (self.diff, [], self.addFiles, [])
-                logging.info("UpDownload Diff: "+str(diffs))
-                self.ic.download_data(
-                    self.Coll, self.localFS, int(self.totalSize),
-                    buff=1024**3, force=False, diffs=diffs)
-                self.finished.emit(True, "Download finished")                
+                self.ic.download_data_using_sync_result(self.sync_list,1024**3, True)
+                self.finished.emit(True, "Download finished")
         except Exception as error:
             logging.info(repr(error))
             self.finished.emit(False, str(error))
