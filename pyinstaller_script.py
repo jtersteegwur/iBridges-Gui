@@ -137,6 +137,7 @@ def main() -> int:
     try:
         remove_pyui_files(uipath)
         ui_to_py(uipath, 'python')
+        return 0
     except Exception as error:
         print(f'Error converting UI files to Python: {error}')
         return 1

@@ -115,10 +115,7 @@ class Ui_tabUpDownload(object):
         self.UploadButton.setMinimumSize(QtCore.QSize(100, 0))
         self.UploadButton.setText("")
         icon = QtGui.QIcon()
-        if getattr(sys, "frozen", False):
-            icon.addPixmap(QtGui.QPixmap(r"../gui/ui_files/../icons/arrow-right.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-        else:
-            icon.addPixmap(QtGui.QPixmap(r"gui/ui_files/../icons/arrow-right.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        icon.addPixmap(QtGui.QPixmap(r"..\icons\arrow-right.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
         self.UploadButton.setIcon(icon)
         self.UploadButton.setIconSize(QtCore.QSize(50, 50))
         self.UploadButton.setObjectName("UploadButton")
@@ -134,10 +131,7 @@ class Ui_tabUpDownload(object):
         self.DownloadButton.setMinimumSize(QtCore.QSize(100, 0))
         self.DownloadButton.setText("")
         icon1 = QtGui.QIcon()
-        if getattr(sys, "frozen", False):
-            icon1.addPixmap(QtGui.QPixmap(r"../gui/ui_files/../icons/arrow-left.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-        else:
-            icon1.addPixmap(QtGui.QPixmap(r"gui/ui_files/../icons/arrow-left.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        icon1.addPixmap(QtGui.QPixmap(r"..\icons\arrow-left.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
         self.DownloadButton.setIcon(icon1)
         self.DownloadButton.setIconSize(QtCore.QSize(50, 50))
         self.DownloadButton.setObjectName("DownloadButton")
