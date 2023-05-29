@@ -7,9 +7,10 @@ import json
 import uuid
 
 DEFAULT_EMPTY_SYNCHRONISATION_CONFIG = {
-                    'comment': "this file is programmatically controlled by ibridges, modification by hand might "
-                               "result in undefined behavior",
-                    'configurations': []}
+    'comment': "this file is programmatically controlled by ibridges, modification by hand might "
+               "result in undefined behavior",
+    'configurations': []}
+
 
 class ConfigRepository:
     def __init__(self, config_path: str = None):
@@ -36,7 +37,7 @@ class ConfigRepository:
         else:
             with open(self.config_path, "x") as file_obj:
                 default_config = DEFAULT_EMPTY_SYNCHRONISATION_CONFIG
-                json.dump(default_config, file_obj,indent=6)
+                json.dump(default_config, file_obj, indent=6)
 
         self.observers = []
 
@@ -58,6 +59,12 @@ class ConfigRepository:
                 del self.config_data[index]
                 self.notify_config_changed()
                 return
+
+    def get_all_cron_datetimes(self, config_uuid=None):
+        if config_uuid is None:
+            return [(config.uuid, croniter.next(croniter(config.cron))) for config in self.config_data]
+        else:
+            return [(config_uuid, croniter.next(croniter(self.get_by_id(config_uuid).cron)))]
 
     def len(self):
         return len(self.config_data)

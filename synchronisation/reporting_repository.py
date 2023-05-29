@@ -46,7 +46,7 @@ class ReportingRepository:
     def json_dict_to_event(self, json_dict:dict):
         return SynchronisationStatusEvent(
             start_date=datetime.datetime.fromisoformat(json_dict.get('start_date')),
-            end_date=datetime.datetime.fromisoformat(json_dict.get('end_date')),
+            end_date=datetime.datetime.fromisoformat(json_dict.get('end_date'))if json_dict.get('end_date') is not None else None,
             source=json_dict.get('source'),
             destination=json_dict.get('destination'),
             status=json_dict.get('status'),
@@ -59,7 +59,7 @@ class ReportingRepository:
             config_id=json_dict.get('config_id'),
             events=[self.json_dict_to_event(event) for event in json_dict.get('events')],
             start_date=datetime.datetime.fromisoformat(json_dict.get('start_date')),
-            end_date = datetime.datetime.fromisoformat(json_dict.get('end_date')),
+            end_date=datetime.datetime.fromisoformat(json_dict.get('end_date')) if json_dict.get('end_date') is not None else None,
             total_bytes_processed=json_dict.get('total_bytes_processed'),
             total_files_processed=json_dict.get('total_files_processed'),
             total_files_processed_succesfully=json_dict.get('total_files_processed_succesfully')
@@ -72,7 +72,7 @@ class ReportingRepository:
             'bytes': event.bytes,
             'status': event.status,
             'start_date': event.start_date.isoformat(),
-            'end_date': event.end_date.isoformat()
+            'end_date': event.end_date.isoformat() if event.end_date is not None else None
         }
         return result
 
@@ -130,13 +130,39 @@ class ReportingRepository:
 
     def add_event_to_report(self, report_uuid: str, event: SynchronisationStatusEvent):
         report: SynchronisationStatusReport = self.find_report_by_uuid(report_uuid)
-        if report.start_date > event.start_date:
-            report.start_date = event.start_date
-        if report.end_date is None or report.end_date < event.end_date:
-            report.end_date = event.end_date
-        report.total_files_processed += 1
-        report.total_bytes_processed += event.bytes
-        if event.status == "OK":
-            report.total_files_processed_succesfully += 1
         report.events.append(event)
+        self.recalculate_report_metadata(report)
         self.notify_reporting_changed(report.config_id, report_uuid)
+
+    def recalculate_report_metadata(self, report: SynchronisationStatusReport,fill_end_date_when_no_event = False):
+        report.total_files_processed = len(report.events)
+        ok_counter = 0
+        byte_counter= 0
+        for event in report.events:
+            if event.start_date < report.start_date:
+                report.start_date =event.start_date
+            if (event.end_date is not None) and ((report.end_date is None) or (event.end_date > report.end_date)):
+                report.end_date = event.end_date
+            if event.status == 'OK':
+                ok_counter += 1
+            byte_counter += event.bytes
+        if fill_end_date_when_no_event:
+            report.end_date = datetime.datetime.now()
+        report.total_files_processed_succesfully = ok_counter
+        report.total_bytes_processed = byte_counter
+
+
+
+
+    def update_event(self, report_uuid:str, source:str, end_date = None, status = None, bytes = None):
+        report = self.find_report_by_uuid(report_uuid)
+        for index,event in enumerate(report.events):
+            if event.source == source:
+                if end_date is not None:
+                    event.end_date = end_date
+                if status is not None:
+                    event.status = status
+                if bytes is not None:
+                    event.bytes = bytes
+                self.recalculate_report_metadata(report)
+                self.notify_reporting_changed(report.config_id, report_uuid)

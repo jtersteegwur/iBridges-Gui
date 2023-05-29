@@ -136,7 +136,7 @@ class IrodsConnector(object):
 
     def upload_data_using_sync_result(self, sync_result_list: list[utils.sync_result.SyncResult], resource_name: str,
                                       minimal_free_space_on_server: int, check_free_space: bool):
-        return self._data_op.upload_data_using_sync_result(sync_result_list, resource_name, minimal_free_space_on_server, check_free_space)
+        return self._data_op.upload_data_with_sync_result_generator(sync_result_list, resource_name, minimal_free_space_on_server, check_free_space)
     def download_data(self, source: None, destination: str,
                       size: int, buff: int = kw.BUFF_SIZE, force: bool = False, diffs: tuple = None):
         if self._icommands.icommands():

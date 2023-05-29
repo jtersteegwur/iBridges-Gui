@@ -330,7 +330,7 @@ class UpDownload(QObject):
     def run(self):    
         try:
             if self.upload:
-                self.ic.upload_data_using_sync_result(self.sync_list, self.resource, int(self.totalSize), not self.force)
+                self.ic.upload_data_with_sync_result_generator(self.sync_list, self.resource, int(self.totalSize), not self.force)
                 self.finished.emit(True, "Upload finished")
             else:
                 self.ic.download_data_using_sync_result(self.sync_list,1024**3, True)

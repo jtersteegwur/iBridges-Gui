@@ -12,7 +12,13 @@ import PyQt6.uic
 
 import iBridges
 import gui
+import logging
+import time
+import irodsConnector.dataOperations
+import irodsConnector.resource
+import irodsConnector.session
 
+ENVIRONMENT_PATH = 'irods_environment_new.json'
 PASSWORD = "I should remove this but better safe than sorry"
 with open('C:\\Users\\terst\\.irods\\passwd.txt', 'r') as file:
     PASSWORD = file.read().rstrip()
@@ -26,6 +32,7 @@ class TestUI:
         def check_widget():
             assert type(widget.currentWidget()) is not iBridges.IrodsLoginWindow
         qtbot.waitUntil(check_widget)
+
 
     def test_synchronisation(self, qtbot):
         widget = self.bootstrap_ibridges(qtbot)
@@ -48,9 +55,24 @@ class TestUI:
         raise ValueError('tab not found')
 
     def log_into_ibridges(self, qtbot, widget, password):
+        envSelect = widget.currentWidget().envbox
+        for i in range(0, len(envSelect)):
+            if envSelect.itemData(i,0) == ENVIRONMENT_PATH:
+                envSelect.setCurrentIndex(i)
         widget.currentWidget().passwordField.clear()
         widget.currentWidget().passwordField.setText(password)
         qtbot.mouseClick(widget.currentWidget().connectButton, PyQt6.QtCore.Qt.MouseButton.LeftButton)
+
+    def test_diff_upload_performance(self):
+        session = irodsConnector.session.Session(ENVIRONMENT_PATH,PASSWORD)
+        resource = irodsConnector.resource.Resource(session)
+        data_op = irodsConnector.dataOperations.DataOperation(resource,session)
+        session.connect("test")
+        start_time = time.perf_counter()
+        data_op.get_diff_upload("C:\\iRods\\irods-main","/RDMacc/home/terst007/upload_here/irods_main")
+        end_time = time.perf_counter()
+        logging.info("%s",end_time - start_time)
+
 
     def bootstrap_ibridges(self, qtbot):
         widget = iBridges.widget

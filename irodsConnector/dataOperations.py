@@ -278,7 +278,7 @@ class DataOperation(object):
 
     def download_data_using_sync_result(self, sync_result_list: list[sync_result.SyncResult],
                                         minimal_free_space_on_disk: int, check_free_space: bool):
-        options = {kw.FORCE_FLAG_KW:''}
+        options = {kw.FORCE_FLAG_KW: ''}
         for item in sync_result_list:
             local_destination_path = utils.LocalPath(item.source_path)
             utils.ensure_dir(local_destination_path.parent)
@@ -289,21 +289,33 @@ class DataOperation(object):
             else:
                 self._ses_man.session.data_objects.get(item.target_path, item.source_path, **options)
 
-    def upload_data_using_sync_result(self, sync_result_list: list[sync_result.SyncResult], resource_name: str,
-                                      minimal_free_space_on_server: int, check_free_space: bool):
+    def upload_data_with_sync_result_generator(self, sync_result_list: list[sync_result.SyncResult], resource_name: str,
+                                               minimal_free_space_on_server: int, check_free_space: bool):
         for item in sync_result_list:
-            if not utils.LocalPath(item.source_path).exists():
-                raise FileNotFoundError(SOURCE_NOT_FOUND)
-            irods_path = utils.IrodsPath(item.target_path)
-            if check_free_space:
-                free_space = self._res_man.resource_space(resource_name)
-                if item.source_file_size > (free_space - minimal_free_space_on_server):
-                    logging.info('ERROR iRODS upload: Not enough free space on resource.', exc_info=True)
-                    raise NotEnoughFreeSpace('ERROR iRODS upload: Not enough free space on resource.')
-            deepest_collection = irods_path.parent
-            # TODO optimisation:fetch all collections first, ensure uniqueness, ensure 'deepest' collections recursivly
+            result = self.upload_data_using_sync_result(check_free_space, item, minimal_free_space_on_server,
+                                                        resource_name)
+            yield (result, item)
+
+    def upload_data_using_sync_result(self, check_free_space, item, minimal_free_space_on_server, resource_name):
+
+        if not utils.LocalPath(item.source_path).exists():
+            # raise FileNotFoundError(SOURCE_NOT_FOUND)
+            return "FAILED, File not found"
+        irods_path = utils.IrodsPath(item.target_path)
+        if check_free_space:
+            free_space = self._res_man.resource_space(resource_name)
+            if item.source_file_size > (free_space - minimal_free_space_on_server):
+                logging.error('ERROR iRODS upload: Not enough free space on resource.', exc_info=True)
+                return "FAILED, Not enough free space"
+                # raise NotEnoughFreeSpace('ERROR iRODS upload: Not enough free space on resource.')
+        deepest_collection = irods_path.parent
+        # TODO optimisation:fetch all collections first, ensure uniqueness, ensure 'deepest' collections recursivly
+        try:
             self.ensure_coll(deepest_collection)
             self.irods_put(item.source_path, item.target_path)
+            return "OK"
+        except:
+            return "FAILED"
 
     def upload_data(self, source: str, destination: irods.collection.Collection,
                     res_name: str, size: int, buff: int = kw.BUFF_SIZE, force: bool = False, diffs: tuple = None):
@@ -630,7 +642,7 @@ class DataOperation(object):
                 local_source_files = ['/' + utils.LocalPath(src).name]
             local_src_folder = utils.LocalPath(src).parent
             target_collection = target.rsplit('/', 1)[0]
-            target_files = [target.split(target_collection,1)[1]]
+            target_files = [target.split(target_collection, 1)[1]]
         elif self._ses_man.session.collections.exists(target):
             if os.path.isfile(src):
                 raise ValueError("src and target should both point to either files/dataobjects or folders/collections")

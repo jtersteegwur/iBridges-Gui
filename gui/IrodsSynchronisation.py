@@ -17,8 +17,56 @@ import datetime
 import croniter
 import time
 import logging
+import irodsConnector
 
 from synchronisation.reporting import SynchronisationStatusEvent, SynchronisationStatusReport
+
+
+class Uploader(PyQt6.QtCore.QObject):
+    finished = PyQt6.QtCore.pyqtSignal()
+
+    def __init__(self, ic: irodsConnector.manager.IrodsConnector,
+                 config: synchronisation.configuration_item.SynchronisationConfigItem,
+                 report_repo: synchronisation.reporting_repository.ReportingRepository):
+        super(Uploader, self).__init__()
+        self.cancelled = False
+        self.irods_connector = ic
+        self.configuration = config
+        self.report_repo = report_repo
+
+    @PyQt6.QtCore.pyqtSlot()
+    def run(self):
+        logging.info("started diffing between %s and %s", self.configuration.local, self.configuration.remote)
+        upload_diff = self.irods_connector._data_op.get_diff_upload(self.configuration.local, self.configuration.remote)
+        logging.info("done diffing between %s and %s", self.configuration.local, self.configuration.remote)
+        logging.info("create report for %s", self.configuration.uuid)
+        report_uuid: str = self.report_repo.create_report(self.configuration.uuid)
+        for upload in upload_diff:
+            status_event = SynchronisationStatusEvent(
+                start_date=datetime.datetime.now(),
+                end_date=None,
+                source=upload.source_path,
+                destination=upload.target_path,
+                status='Pending',
+                bytes=0
+            )
+            logging.info("add event for %s --> %s", status_event.source, status_event.destination)
+            self.report_repo.add_event_to_report(report_uuid, status_event)
+
+        resource_name = 'hot_1'
+        minimal_free_space_on_server = 0
+        check_free_space = True
+        generator = self.irods_connector._data_op.upload_data_with_sync_result_generator(upload_diff, resource_name,
+                                                                                         minimal_free_space_on_server,
+                                                                                         check_free_space)
+        logging.info("start uploading")
+        for result, sync_result in generator:
+            self.report_repo.update_event(report_uuid, sync_result.source_path, datetime.datetime.now(), result,
+                                          sync_result.source_file_size)
+        logging.info("done uploading")
+        report = self.report_repo.find_report_by_uuid(report_uuid)
+        self.report_repo.recalculate_report_metadata(report, fill_end_date_when_no_event=True)
+        self.finished.emit()
 
 
 class AnimationTicker(PyQt6.QtCore.QObject):
@@ -29,7 +77,6 @@ class AnimationTicker(PyQt6.QtCore.QObject):
         self.running = False
         self.tickcounter = 0
 
-
     @PyQt6.QtCore.pyqtSlot()
     def run(self):
         self.running = True
@@ -37,7 +84,6 @@ class AnimationTicker(PyQt6.QtCore.QObject):
 
         while self.running:
             self.text_animation_tick.emit(self.tickcounter)
-            logging.info("Beep")
             self.thread().msleep(100)
             self.tickcounter += 1
 
@@ -55,49 +101,72 @@ class IrodsSynchronisation(PyQt6.QtWidgets.QWidget, gui.ui_files.tabSynchronisat
             PyQt6.uic.loadUi("gui/ui_files/tabSynchronisation.ui", self)
         self.configuration_repository = synchronisation.configuration_repository.ConfigRepository()
         self.reporting_repository = synchronisation.reporting_repository.ReportingRepository()
-        self._setup_configuration_view()
-        self._setup_sync_event_view()
-        self.create_configuration_button.clicked.connect(lambda: self.create_configuration_dialog())
-        self.update_configuration_button.clicked.connect(lambda: self.create_update_config_dialog())
-        self.delete_configuration_button.clicked.connect(lambda: self.delete_selected_configuration())
-        self.configuration_view.model().layoutChanged.connect(lambda: self.on_configuration_changed())
-        self.configuration_view.selectionModel().selectionChanged.connect(lambda: self.enable_disable_buttons())
-        self.on_configuration_changed()
+        self._setup_configuration_view_and_buttons()
+        self._setup_sync_event_view_and_buttons()
+
         self._setup_animation_ticker()
-        self.force_trigger_button.clicked.connect(self.toggle1)
+        self._upload_thread_dict = dict()
+        self._uploader_dict = dict()
+        self.timer_dict = dict()
+        self.reinitialise_scheduling_timers()
+        # self.uploader_thread = PyQt6.QtCore.QThread()
         self.ui = None
         self.ic = ic
+        self.configuration_view.resizeColumnsToContents()
+        self.enable_disable_buttons()
+
+    def reinitialise_scheduling_timers(self):
+        for value in self.timer_dict.values():
+            value.stop()
+        self.timer_dict.clear()
+        datetimes = self.configuration_repository.get_all_cron_datetimes()
+        for next_moment in datetimes:
+            next_interval_seconds = int(next_moment[1] - time.mktime(datetime.datetime.now().timetuple()))
+            timer = PyQt6.QtCore.QTimer()
+            config_id = next_moment[0]
+            timer.timeout.connect(lambda config_uuid=config_id: self.start_uploader(config_uuid))
+            timer.timeout.connect(lambda: self.reinitialise_scheduling_timers())
+            timer.setSingleShot(True)
+            self.timer_dict[next_moment[0]] = timer
+            timer.start(next_interval_seconds * 1000)
+            pass
 
     def _setup_animation_ticker(self):
         self.ticker_thread = PyQt6.QtCore.QThread()
         self.ticker = AnimationTicker()
         self.ticker.moveToThread(self.ticker_thread)
+        self.destroyed.connect(self.ticker.stop)
         self.ticker_thread.started.connect(self.ticker.run)
+        # TODO: this could be optimised, only connect when needed to
+        self.ticker.text_animation_tick.connect(self.configuration_view.model().animation_tick)
         self.ticker_thread.start()
 
-    def toggle1(self):
-        self.force_trigger_button.clicked.disconnect()
-        self.ticker.text_animation_tick.connect(self.timerding)
-        self.force_trigger_button.clicked.connect(self.toggle2)
+    def start_uploader(self, config_uuid=None):
+        if config_uuid is None:
+            row = self.configuration_view.currentIndex().row()
+            config = self.configuration_repository.get_by_index(row)
+        else:
+            config = self.configuration_repository.get_by_id(config_uuid)
+        if self._upload_thread_dict.get(config.uuid) is None:
+            logging.info("starting upload %s", config.uuid)
+            uploader = Uploader(self.ic, config=config, report_repo=self.reporting_repository)
+            uploader_thread = PyQt6.QtCore.QThread()
+            self._uploader_dict[config.uuid] = uploader
+            self._upload_thread_dict[config.uuid] = uploader_thread
+            uploader_thread.started.connect(uploader.run)
+            uploader_thread.started.connect(lambda: self.configuration_view.model().enable_text_animation(config.uuid))
+            uploader.finished.connect(lambda: self.configuration_view.model().disable_text_animation(config.uuid))
+            uploader.finished.connect(lambda: self.clean_up_uploader(config.uuid))
+            uploader.moveToThread(uploader_thread)
+            uploader_thread.start()
 
-    def toggle2(self):
-        self.force_trigger_button.clicked.disconnect()
-        self.force_trigger_button.clicked.connect(self.toggle1)
+    def clean_up_uploader(self, uuid: str):
+        logging.info("cleaning up uploader %s", uuid)
+        del self._uploader_dict[uuid]
+        self._upload_thread_dict[uuid].quit()
+        del self._upload_thread_dict[uuid]
 
-    def timerding(self, tickcounter):
-        bla = [
-            'loading',
-            'loading.',
-            'loading..',
-            'loading...',
-            'loading..',
-            'loading.'
-        ]
-        current_frame = tickcounter % len(bla)
-        self.force_trigger_button.setText(bla[current_frame])
-
-
-    def _setup_configuration_view(self):
+    def _setup_configuration_view_and_buttons(self):
         self.configuration_view.setSelectionBehavior(PyQt6.QtWidgets.QTableView.SelectionBehavior.SelectRows)
         self.configuration_view.setSelectionMode(PyQt6.QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         self.configuration_view.setModel(SynchronisationConfigurationTableModel(self.configuration_repository))
@@ -105,8 +174,14 @@ class IrodsSynchronisation(PyQt6.QtWidgets.QWidget, gui.ui_files.tabSynchronisat
             PyQt6.QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self.configuration_view.horizontalHeader().setSizeAdjustPolicy(
             PyQt6.QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.configuration_view.model().layoutChanged.connect(lambda: self.on_configuration_changed())
+        self.configuration_view.selectionModel().selectionChanged.connect(lambda: self.enable_disable_buttons())
+        self.configuration_view.selectionModel().selectionChanged.connect(lambda: self.on_config_selection_changed())
+        self.create_configuration_button.clicked.connect(lambda: self.create_configuration_dialog())
+        self.update_configuration_button.clicked.connect(lambda: self.create_update_config_dialog())
+        self.delete_configuration_button.clicked.connect(lambda: self.delete_selected_configuration())
 
-    def _setup_sync_event_view(self):
+    def _setup_sync_event_view_and_buttons(self):
         self.event_view.setSelectionBehavior(PyQt6.QtWidgets.QTableView.SelectionBehavior.SelectRows)
         self.event_view.setSelectionMode(PyQt6.QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         self.event_view.setModel(SynchronisationStatusTableModel(self.reporting_repository))
@@ -115,23 +190,31 @@ class IrodsSynchronisation(PyQt6.QtWidgets.QWidget, gui.ui_files.tabSynchronisat
             PyQt6.QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self.event_view.model().layoutChanged.connect(lambda: self.event_view.resizeColumnsToContents())
         self.event_view.doubleClicked.connect(self.event_view.model().on_double_click)
+        self.force_trigger_button.clicked.connect(self.start_uploader)
 
     def on_configuration_changed(self):
         self.configuration_view.resizeColumnsToContents()
         self.enable_disable_buttons()
 
     def enable_disable_buttons(self):
-        row_index = self.configuration_view.currentIndex().row()
-        has_selected_items = row_index >= 0
-        update_delete_force_enabled = has_selected_items
-        self.update_configuration_button.setEnabled(update_delete_force_enabled)
-        self.delete_configuration_button.setEnabled(update_delete_force_enabled)
-        self.force_trigger_button.setEnabled(update_delete_force_enabled)
+        configuration_row_index = self.configuration_view.currentIndex().row()
+        config_view_has_selected_items = configuration_row_index >= 0
+        config = self.configuration_repository.get_by_index(
+            configuration_row_index) if config_view_has_selected_items else None
+        self.update_configuration_button.setEnabled(config_view_has_selected_items)
+        self.delete_configuration_button.setEnabled(config_view_has_selected_items)
+        self.force_trigger_button.setEnabled(
+            config_view_has_selected_items and config.uuid not in self._upload_thread_dict.keys())
         self.update_configuration_button.setStyleSheet(self.update_configuration_button.styleSheet())
         self.delete_configuration_button.setStyleSheet(self.delete_configuration_button.styleSheet())
         self.force_trigger_button.setStyleSheet(self.force_trigger_button.styleSheet())
-        if has_selected_items:
-            config = self.configuration_repository.get_by_index(row_index)
+
+    def on_config_selection_changed(self):
+        configuration_row_index = self.configuration_view.currentIndex().row()
+        config_view_has_selected_items = configuration_row_index >= 0
+        config = self.configuration_repository.get_by_index(
+            configuration_row_index) if config_view_has_selected_items else None
+        if config_view_has_selected_items:
             self.event_view.model().change_selected_config_uuid(config.uuid)
             self.event_view.resizeColumnsToContents()
         else:
@@ -264,6 +347,21 @@ class SynchronisationConfigurationTableModel(PyQt6.QtCore.QAbstractTableModel):
         super().__init__(parent)
         self.config_repository = config_repository
         config_repository.attach_obverver(self.on_data_changed)
+        self.animation_tick_counter = 0
+        self._animation_set = set()
+
+    def enable_text_animation(self, config_id: str):
+        logging.info("start textanimation")
+        self._animation_set.add(config_id)
+
+    def disable_text_animation(self, config_id: str):
+        logging.info("stop textanimation")
+        if config_id in self._animation_set:
+            self._animation_set.remove(config_id)
+
+    def animation_tick(self, tickcounter):
+        self.animation_tick_counter = tickcounter
+        self.layoutChanged.emit()
 
     def on_data_changed(self):
         self.layoutChanged.emit()
@@ -304,10 +402,23 @@ class SynchronisationConfigurationTableModel(PyQt6.QtCore.QAbstractTableModel):
 
     def determineState(self, sci: synchronisation.configuration_item.SynchronisationConfigItem):
         if sci.validate_cron_localpath():
-            now = datetime.datetime.now()
-            next_moment = croniter.croniter(sci.cron, now).get_next(datetime.datetime)
-            str_next_moment = next_moment.strftime("%m/%d/%Y, %H:%M:%S")
-            return f'Scheduled for {str_next_moment}'
+            if sci.uuid in self._animation_set:
+                bla = [
+                    'loading',
+                    'loading.',
+                    'loading..',
+                    'loading...',
+                    'loading..',
+                    'loading.'
+                ]
+                current_frame_text = bla[self.animation_tick_counter % len(bla)]
+                return current_frame_text
+            else:
+                now = datetime.datetime.now()
+                next_moment = croniter.croniter(sci.cron, now).get_next(datetime.datetime)
+                str_next_moment = next_moment.strftime("%m/%d/%Y, %H:%M:%S")
+                return str_next_moment
+            # return f'Scheduled for {str_next_moment}'
         else:
             return 'ERROR'
 
