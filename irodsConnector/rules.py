@@ -21,15 +21,20 @@ class Rules(object):
         """
         self._ses_man = ses_man
 
-    def execute_rule(self, rule_file: str, params: dict, output: str = 'ruleExecOut') -> tuple:
+    def execute_rule(self, params: dict, rule_file: str = None, body: str = '', rule_type: str = 'irods_rule_language',
+                     output: str = 'ruleExecOut') -> tuple:
         """Execute an iRODS rule.
 
         Parameters
         ----------
         rule_file : str, file-like
             Name of the iRODS rule file, or a file-like object representing it.
+        body    : str,rulename
+            Name of the rule on the irods server.
         params : dict
             Rule arguments.
+        rule_type : str
+            changes between irods rule language and python rules.
         output : str
             Rule output variable(s).
 
@@ -48,8 +53,8 @@ class Rules(object):
         """
         try:
             rule = irods.rule.Rule(
-                self._ses_man.session, rule_file=rule_file, params=params, output=output,
-                instance_name='irods_rule_engine_plugin-irods_rule_language-instance')
+                self._ses_man.session, rule_file=rule_file, body=body, params=params, output=output,
+                instance_name=f'irods_rule_engine_plugin-{rule_type}-instance')
             out = rule.execute()
         except irods.exception.NetworkException as netexc:
             logging.info('Lost connection to iRODS server.')
