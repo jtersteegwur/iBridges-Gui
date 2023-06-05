@@ -36,23 +36,16 @@ class Uploader(PyQt6.QtCore.QObject):
 
     @PyQt6.QtCore.pyqtSlot()
     def run(self):
-        logging.info("started diffing between %s and %s", self.configuration.local, self.configuration.remote)
+        logging.debug("started diffing between %s and %s", self.configuration.local, self.configuration.remote)
         upload_diff = self.irods_connector._data_op.get_diff_upload(self.configuration.local, self.configuration.remote)
-        logging.info("done diffing between %s and %s", self.configuration.local, self.configuration.remote)
-        logging.info("create report for %s", self.configuration.uuid)
+        logging.debug("done diffing between %s and %s", self.configuration.local, self.configuration.remote)
+        logging.debug("create report for %s", self.configuration.uuid)
         report_uuid: str = self.report_repo.create_report(self.configuration.uuid)
-        for upload in upload_diff:
-            status_event = SynchronisationStatusEvent(
-                start_date=datetime.datetime.now(),
-                end_date=None,
-                source=upload.source_path,
-                destination=upload.target_path,
-                status='Pending',
-                bytes=0
-            )
-            logging.info("add event for %s --> %s", status_event.source, status_event.destination)
-            self.report_repo.add_event_to_report(report_uuid, status_event)
-
+        events = [
+            SynchronisationStatusEvent(start_date=datetime.datetime.now(), end_date=None, source=upload.source_path,
+                                       destination=upload.target_path, status='Pending', bytes=0) for upload in
+            upload_diff]
+        self.report_repo.add_events_to_report(report_uuid, events)
         resource_name = 'hot_1'
         minimal_free_space_on_server = 0
         check_free_space = True
@@ -141,7 +134,7 @@ class IrodsSynchronisation(PyQt6.QtWidgets.QWidget, gui.ui_files.tabSynchronisat
         self.ticker.text_animation_tick.connect(self.configuration_view.model().animation_tick)
         self.ticker_thread.start()
 
-    def start_uploader(self, config_uuid=None):
+    def start_uploader(self, config_uuid:str = None):
         if config_uuid is None:
             row = self.configuration_view.currentIndex().row()
             config = self.configuration_repository.get_by_index(row)
@@ -190,7 +183,7 @@ class IrodsSynchronisation(PyQt6.QtWidgets.QWidget, gui.ui_files.tabSynchronisat
             PyQt6.QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self.event_view.model().layoutChanged.connect(lambda: self.event_view.resizeColumnsToContents())
         self.event_view.doubleClicked.connect(self.event_view.model().on_double_click)
-        self.force_trigger_button.clicked.connect(self.start_uploader)
+        self.force_trigger_button.clicked.connect(lambda: self.start_uploader(None))
 
     def on_configuration_changed(self):
         self.configuration_view.resizeColumnsToContents()

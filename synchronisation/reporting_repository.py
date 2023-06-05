@@ -128,6 +128,12 @@ class ReportingRepository:
                 return self._data[index]
         return []
 
+    def add_events_to_report(self, report_uuid: str, events: list[SynchronisationStatusEvent]):
+        report: SynchronisationStatusReport = self.find_report_by_uuid(report_uuid)
+        report.events.extend(events)
+        self.recalculate_report_metadata(report)
+        self.notify_reporting_changed(report.config_id, report_uuid)
+
     def add_event_to_report(self, report_uuid: str, event: SynchronisationStatusEvent):
         report: SynchronisationStatusReport = self.find_report_by_uuid(report_uuid)
         report.events.append(event)
@@ -150,9 +156,6 @@ class ReportingRepository:
             report.end_date = datetime.datetime.now()
         report.total_files_processed_succesfully = ok_counter
         report.total_bytes_processed = byte_counter
-
-
-
 
     def update_event(self, report_uuid:str, source:str, end_date = None, status = None, bytes = None):
         report = self.find_report_by_uuid(report_uuid)

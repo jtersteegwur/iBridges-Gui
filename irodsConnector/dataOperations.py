@@ -9,10 +9,15 @@ from concurrent.futures import ThreadPoolExecutor, wait
 import irods.collection
 import irods.data_object
 import irods.exception
+import irods.models
 import irodsConnector.keywords as kw
 from irodsConnector.resource import NotEnoughFreeSpace, Resource
 from irodsConnector.session import Session
 from utils import utils, sync_result
+from irods.session import iRODSSession
+from irods.models import Resource, DataObject, ResourceMeta, Collection, CollectionMeta
+from irods.column import Criterion,Column,Integer
+
 
 SOURCE_NOT_FOUND = 'ERROR iRODS upload: not a valid source path'
 
@@ -577,54 +582,77 @@ class DataOperation(object):
                 result = ([(objpath, fspath)], [], [])
         return result
 
+    def fetch_all_files_and_checksums_in_collection(self, collection_name: str):
+        query = self._ses_man.session.query(DataObject.name, Collection.name, DataObject.checksum).filter(
+            Criterion('like', Collection.name, collection_name+'%'))
+        result = dict()
+        for stuff in query:
+            data_object_path = f"{stuff[Collection.name]}/{stuff[DataObject.name]}"[len(collection_name):]
+            result[data_object_path] = stuff[DataObject.checksum]
+        return result
+    def fetch_single_data_object_and_checksum(self, collection_name: str, file_name: str):
+        query = self._ses_man.session.query(DataObject.name, Collection.name, DataObject.checksum)\
+            .filter(Criterion('=', Collection.name, collection_name))\
+            .filter(Criterion('=', DataObject.name, file_name))
+        result = dict()
+        for stuff in query:
+            data_object_path = f"{stuff[Collection.name]}/{stuff[DataObject.name]}"[len(collection_name):]
+            result[data_object_path] = stuff[DataObject.checksum]
+        return result
+
+    def _get_diff_upload_file(self, src_file, target_collection, target_filename) -> list[sync_result.SyncResult]:
+        total_remote_path = f"{target_collection}/{target_filename}"
+        result = sync_result.SyncResult(source=src_file, target=total_remote_path,
+                                        filesize=os.path.getsize(src_file),
+                                        f_sync_method=sync_result.FileSyncMethod.CREATE)
+        if not self._ses_man.session.collections.exists(target_collection):
+            return [result]
+        if not self._ses_man.session.data_objects.exists(total_remote_path):
+            return [result]
+        else:
+            remote_checksum_query_result = self.fetch_single_data_object_and_checksum(target_collection, target_filename)
+            checksum = remote_checksum_query_result.get(f"/{target_filename}", None)
+            if self._checksums_are_different(src_file, checksum):
+                result.file_sync_method = sync_result.FileSyncMethod.UPDATE
+                return [result]
+            else:
+                return []
+
     def get_diff_upload(self, src: str, target: str) -> list[sync_result.SyncResult]:
         """
 
         target: path to where it should be uploaded
         """
-
-        # assume src is a local path for now
-        local_src_folder = ''
-        local_source_files = []
-        target_collection = ''
-        target_files = []
-        if target is None:
-            raise ValueError("No target specified")
-
-        if os.path.isdir(src):
-            if self._ses_man.session.data_objects.exists(target):
-                raise ValueError(f"{src} exists as a folder locally, while {target} exists as a data object remotely")
-            local_src_folder = src
-            local_source_files = self._get_files_relative_to_folder_as_posix(local_src_folder)
-            target_collection = target
-            if self._ses_man.session.collections.exists(target):
-                target_files = self._get_dataobjects_relative_to_collection(self.get_collection(target_collection))
-        elif os.path.isfile(src):
+        if not os.path.exists(src):
+            raise ValueError(f"{src} does not exist locally")
+        if os.path.isfile(src):
             if self._ses_man.session.collections.exists(target):
                 raise ValueError(f"{src} exists as a file locally, while {target} exists as a collection remotely")
-            local_src_folder = utils.LocalPath(src).parent
-            local_source_files = ['/' + utils.LocalPath(src).name]
-            target_collection = target.rsplit(local_source_files[0], 1)[0]
-            # This forces the file-compare
-            if self._ses_man.session.data_objects.exists(target):
-                target_files = local_source_files
+            else:
+                rsplit = target.rsplit('/', 1) # [collection, filename]
+                return self._get_diff_upload_file(src, rsplit[0], rsplit[1])
 
-        result = []
-        files_to_always_upload = (set(local_source_files).difference(target_files))
-        files_to_check_for_difference = (set(local_source_files).intersection(target_files))
-        intersection = self.check_diffs_in_intersection(target_collection, local_src_folder,
-                                                        files_to_check_for_difference, "checksum")
-        intersect_sync_result = [
-            sync_result.SyncResult(intersect[1], intersect[0], 0, sync_result.FileSyncMethod.UPDATE) for intersect in
-            intersection]
-        upload = [sync_result.SyncResult(local_src_folder + always_upload, target_collection + always_upload, 0,
-                                         sync_result.FileSyncMethod.CREATE) for
-                  always_upload in files_to_always_upload]
-        result.extend(upload)
-        result.extend(intersect_sync_result)
-        for syncresult in result:
-            syncresult.source_file_size = os.path.getsize(syncresult.source_path)
-        return result
+        local_source_files = self._get_files_relative_to_folder_as_posix(src)
+        irods_files_with_checksums = self.fetch_all_files_and_checksums_in_collection(target)
+        local_source_files_set = set(local_source_files)
+        files_to_always_upload = local_source_files_set.difference(irods_files_with_checksums)
+        always_upload_sync_result = [sync_result.SyncResult(
+            source=f"{src}{file}",
+            target=f"{target}{file}",
+            f_sync_method=sync_result.FileSyncMethod.CREATE,
+            filesize=os.path.getsize(f"{src}{file}")
+        )for file in files_to_always_upload]
+
+        intersection = local_source_files_set.intersection(irods_files_with_checksums)
+        update_sync_result = []
+        for file in intersection:
+            if self._checksums_are_different(f"{src}{file}",irods_files_with_checksums[file]):
+                add_me = sync_result.SyncResult(source=f"{src}{file}", target=f"{target}{file}",
+                                                f_sync_method=sync_result.FileSyncMethod.UPDATE,
+                                                filesize=os.path.getsize(f"{src}{file}"))
+                update_sync_result.append(add_me)
+        return always_upload_sync_result + update_sync_result
+
 
     def get_diff_download(self, src: str, target: str) -> list[sync_result.SyncResult]:
 
@@ -658,7 +686,7 @@ class DataOperation(object):
         files_to_always_upload = (set(target_files).difference(local_source_files))
         files_to_check_for_difference = (set(local_source_files).intersection(target_files))
         intersection = self.check_diffs_in_intersection(target_collection, local_src_folder,
-                                                        files_to_check_for_difference, "checksum")
+                                                        files_to_check_for_difference)
         intersect_sync_result = [
             sync_result.SyncResult(intersect[1], intersect[0], 0, sync_result.FileSyncMethod.UPDATE) for intersect in
             intersection]
@@ -704,7 +732,7 @@ class DataOperation(object):
         if coll and dirpath:
             intersection = set(local_files_to_diff).intersection(data_objects_to_diff)
             coll_path = coll.path
-            diff = self.check_diffs_in_intersection(coll_path, dirpath, intersection, scope)
+            diff = self.check_diffs_in_intersection(coll_path, dirpath, intersection)
 
         # adding files that are not on iRODS, only present on local FS
         # adding files that are not on local FS, only present in iRODS
@@ -712,8 +740,9 @@ class DataOperation(object):
         irodsonly = list(set(data_objects_to_diff).difference(local_files_to_diff))
         return (diff, list(set(local_files_to_diff).difference(data_objects_to_diff)), irodsonly)
 
-    def check_diffs_in_intersection(self, coll_path, dirpath, intersection, scope):
+    def check_diffs_in_intersection(self, coll_path, dirpath, intersection):
         diff = []
+
         for locpartialpath in intersection:
             irods_path = coll_path + locpartialpath
             local_path = dirpath + locpartialpath.replace('/', os.sep)
@@ -729,6 +758,20 @@ class DataOperation(object):
             else:  # same paths, no scope
                 diff.append(irods_and_local_path)
         return diff
+
+    def _checksums_are_different(self, local_file_path : str, irods_checksum_value: str):
+        if irods_checksum_value is None:
+            return os.path.exists(local_file_path)
+
+        if irods_checksum_value.startswith("sha2:"):
+            irods_checksum = base64.b64decode(irods_checksum_value.split('sha2:')[1])
+            local_checksum = self.extract_checksum(local_file_path,
+                                                       lambda opened_stream: hashlib.sha256(opened_stream).digest())
+            return irods_checksum != local_checksum
+        else:
+            local_checksum = self.extract_checksum(local_file_path,
+                                                   lambda opened_stream: hashlib.md5(opened_stream).hexdigest())
+            return irods_checksum_value != local_checksum
 
     def compare_checksum_difference(self, data_object, local_path):
         objcheck = data_object.checksum
