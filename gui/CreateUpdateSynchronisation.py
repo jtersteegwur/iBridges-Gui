@@ -13,6 +13,15 @@ from croniter import croniter
 
 
 class CreateUpdateSynchronisationConfigDialog(Ui_Dialog):
+    crontext = {
+        "monthly at 00:00 on the 1st day": '0 0 1 * *',
+        "weekly at 00:00 on Saturday": '0 0 * * SAT',
+        "weekly at 00:00 on Sunday": '0 0 * * SUN',
+        "daily at 00:00": '0 0 * * *',
+        "daily at 13:00": '0 13 * * *',
+        "hourly at XX:00": '0 * * * *',
+    }
+
     def __init__(self, irods_connector: IrodsConnector, parent: QDialog):
         super().__init__()
         if getattr(sys, 'frozen', False):
@@ -22,13 +31,17 @@ class CreateUpdateSynchronisationConfigDialog(Ui_Dialog):
         self.setupUi(parent)
         self.ic = irods_connector
         self.parent = parent
-        self.comboBox.currentIndexChanged.connect(lambda: self.dialogSyncComboAndInput('combobox'))
-        self.cronInput.textChanged.connect(lambda: self.dialogSyncComboAndInput('text'))
-        self.browseButton.clicked.connect(lambda: self.dialogOpenfileDialog(self.localInput))
-        self.buttonBox.accepted.connect(lambda: self.dialogValidateAndAcceptNewConfig())
+        self._populate_cron_table()
+        self.comboBox.currentIndexChanged.connect(lambda: self._sync_cron_combobox_and_cron_input('combobox'))
+        self.cronInput.textChanged.connect(lambda: self._sync_cron_combobox_and_cron_input('text'))
+        self.browseButton.clicked.connect(lambda: self._open_file_dialog(self.localInput))
+        self.buttonBox.accepted.connect(lambda: self.validate_and_accept_config())
 
+    def _populate_cron_table(self):
+        self.comboBox.addItems(self.crontext.keys())
+        self.comboBox.addItem("Custom")
     def build_synchronisationconfigitem(self, uuid = None):
-        result = SynchronisationConfigItem(type=self.dialogGetType(),
+        result = SynchronisationConfigItem(type=self._get_config_type(),
                                            local=self.localInput.toPlainText(),
                                            remote=self.remoteInput.toPlainText(),
                                            cron=self.cronInput.toPlainText(),
@@ -42,6 +55,7 @@ class CreateUpdateSynchronisationConfigDialog(Ui_Dialog):
         this_dialog.localInput.setPlainText(sci.local)
         this_dialog.remoteInput.setPlainText(sci.remote)
         this_dialog.cronInput.setPlainText(sci.cron)
+        this_dialog._sync_cron_combobox_and_cron_input( "text")
         parent_exec = parent.exec()
         if parent_exec == QDialog.DialogCode.Accepted:
             return this_dialog.build_synchronisationconfigitem(sci.uuid)
@@ -49,17 +63,16 @@ class CreateUpdateSynchronisationConfigDialog(Ui_Dialog):
             return None
 
 
-    def dialogGetType(self):
+    def _get_config_type(self):
         return "Scheduled upload"
 
-    def dialogOpenfileDialog(self, target):
+    def _open_file_dialog(self, target):
         dialog = PyQt6.QtWidgets.QFileDialog()
-        # option = PyQt6.QtWidgets.QFileDialog.Option.ShowDirsOnly
         file_select = PyQt6.QtWidgets.QFileDialog.getExistingDirectory(dialog, "Select folder")
         if file_select and '' != file_select:
             target.setPlainText(path.normpath(file_select))
 
-    def dialogValidateAndAcceptNewConfig(self):
+    def validate_and_accept_config(self):
         resulting_config = self.build_synchronisationconfigitem()
         config_valid = self.validate_config(resulting_config)
         if config_valid:
@@ -98,27 +111,31 @@ class CreateUpdateSynchronisationConfigDialog(Ui_Dialog):
         self.cronInput.blockSignals(True)
         self.cronInput.setText(value)
         self.cronInput.blockSignals(False)
+    def _cron_to_text(self, cron):
+        for text,cronvalue in self.crontext.items():
+            if cronvalue == cron:
+                return text
+        return "Custom"
 
-    def _change_combobox_blocking_signals(self, index: int):
-        self.comboBox.blockSignals(True)
-        self.comboBox.setCurrentIndex(index)
-        self.comboBox.blockSignals(False)
+    def _text_to_cron(self, text_value):
+        for text,cronvalue in self.crontext.items():
+            if text == text_value:
+                return cronvalue
+        return None
 
-    def dialogSyncComboAndInput(self, initiator):
-        index = self.comboBox.currentIndex()
+    def _select_combobox_with_text(self, text):
+        index = self.comboBox.findText(text)
+        if index != -1:
+            self.comboBox.blockSignals(True)
+            self.comboBox.setCurrentIndex(index)
+            self.comboBox.blockSignals(False)
 
-        text = self.cronInput.toPlainText()
+    def _sync_cron_combobox_and_cron_input(self, initiator):
+        combobox_text_value =  self.comboBox.itemData(self.comboBox.currentIndex(), PyQt6.QtCore.Qt.ItemDataRole.DisplayRole)
+        cron_value = self.cronInput.toPlainText()
         if 'text' == initiator:
-            match text:
-                case '0 0 * * *':
-                    self._change_combobox_blocking_signals(0)
-                case '0 13 * * *':
-                    self._change_combobox_blocking_signals(1)
-                case _:
-                    self._change_combobox_blocking_signals(2)
+            text = self._cron_to_text(cron_value)
+            self._select_combobox_with_text(text)
         elif 'combobox' == initiator:
-            match index:
-                case 0:
-                    self._change_input_blocking_signals('0 0 * * *')
-                case 1:
-                    self._change_input_blocking_signals('0 13 * * *')
+            cron = self._text_to_cron(combobox_text_value)
+            self._change_input_blocking_signals(cron)
