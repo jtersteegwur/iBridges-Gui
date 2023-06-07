@@ -11,7 +11,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 class Ui_tabSynchronisation(object):
     def setupUi(self, tabSynchronisation):
         tabSynchronisation.setObjectName("tabSynchronisation")
-        tabSynchronisation.resize(682, 625)
+        tabSynchronisation.resize(682, 712)
         tabSynchronisation.setStyleSheet("QWidget\n"
 "{\n"
 "    color: rgb(86, 184, 139);\n"
@@ -78,15 +78,26 @@ class Ui_tabSynchronisation(object):
 "}")
         self.delete_configuration_button.setObjectName("delete_configuration_button")
         self.event_view = QtWidgets.QTableView(tabSynchronisation)
-        self.event_view.setGeometry(QtCore.QRect(10, 340, 641, 251))
+        self.event_view.setGeometry(QtCore.QRect(10, 380, 641, 251))
         self.event_view.setObjectName("event_view")
         self.event_view.horizontalHeader().setDefaultSectionSize(250)
         self.force_trigger_button = QtWidgets.QPushButton(tabSynchronisation)
-        self.force_trigger_button.setGeometry(QtCore.QRect(10, 600, 93, 28))
+        self.force_trigger_button.setEnabled(False)
+        self.force_trigger_button.setGeometry(QtCore.QRect(10, 640, 93, 28))
+        self.force_trigger_button.setStyleSheet("QPushButton[enabled=true]{\n"
+"color: rgb(86, 184, 139);\n"
+"}\n"
+"\n"
+"QPushButton[enabled=false]{\n"
+"color: rgb(117, 138, 122);\n"
+"}")
         self.force_trigger_button.setObjectName("force_trigger_button")
         self.configuration_view = QtWidgets.QTableView(tabSynchronisation)
         self.configuration_view.setGeometry(QtCore.QRect(10, 20, 639, 279))
         self.configuration_view.setObjectName("configuration_view")
+        self.event_view_label = QtWidgets.QLabel(tabSynchronisation)
+        self.event_view_label.setGeometry(QtCore.QRect(20, 360, 120, 13))
+        self.event_view_label.setObjectName("event_view_label")
 
         self.retranslateUi(tabSynchronisation)
         QtCore.QMetaObject.connectSlotsByName(tabSynchronisation)
@@ -97,7 +108,8 @@ class Ui_tabSynchronisation(object):
         self.create_configuration_button.setText(_translate("tabSynchronisation", "Create"))
         self.update_configuration_button.setText(_translate("tabSynchronisation", "Update"))
         self.delete_configuration_button.setText(_translate("tabSynchronisation", "Delete"))
-        self.force_trigger_button.setText(_translate("tabSynchronisation", "magic"))
+        self.force_trigger_button.setText(_translate("tabSynchronisation", "force upload"))
+        self.event_view_label.setText(_translate("tabSynchronisation", "Synchronisation events"))
 
 
 if __name__ == "__main__":

@@ -1,3 +1,7 @@
+from PyQt6.QtWidgets import QWidget
+from gui.IrodsSynchronisation import IrodsSynchronisation
+from typing import Type
+
 import sys
 
 import irods.collection
@@ -23,6 +27,8 @@ import irodsConnector.session
 
 
 
+
+
 ENVIRONMENT_PATH_FILE = 'irods_environment_new.json'
 ENVIRONMENT = os.path.join(os.path.expanduser('~'), '.irods', ENVIRONMENT_PATH_FILE)
 PASSWORD = "I should remove this but better safe than sorry"
@@ -35,40 +41,30 @@ class TestUI:
 
 
 
-
-    def test_diff_upload_performance(self,caplog):
-        caplog.set_level(logging.INFO)
-        connector = IrodsConnector(ENVIRONMENT, PASSWORD, 'mooienaam')
-        start_time = time.perf_counter()
-        logging.getLogger().info("test")
-       #connector._data_op.fetch_all_files_and_checksums_in_collection("/RDMacc/home/terst007/upload_here/irods_main")
-        connector.get_diff_upload("C:\\iRods\\irods-main","/RDMacc/home/terst007/upload_here/irods_main")
-        end_time = time.perf_counter()
-        logging.info("%s", end_time - start_time)
     def test_login(self, qtbot):
         widget = self.bootstrap_ibridges(qtbot)
         self.log_into_ibridges(qtbot, widget, PASSWORD)
         def check_widget():
-            assert type(widget.currentWidget()) is not iBridges.IrodsLoginWindow
+            assert not isinstance(widget.currentWidget(),iBridges.IrodsLoginWindow)
         qtbot.waitUntil(check_widget)
-
 
     def test_synchronisation(self, qtbot):
         widget = self.bootstrap_ibridges(qtbot)
         self.log_into_ibridges(qtbot, widget, PASSWORD)
-        def logged_in_successfully():
-            assert type(widget.currentWidget()) is not iBridges.IrodsLoginWindow
-        qtbot.waitUntil(logged_in_successfully)
-        asdf : PyQt6.QtWidgets.QTabWidget = widget.currentWidget().tabWidget
-        self._navigate_to_tab(asdf, "Synchronisation")
-        qtbot.stop()
+        tab: IrodsSynchronisation = self._navigate_to_tab(widget, "Synchronisation")
+        qtbot.mouseClick(tab.create_configuration_button, PyQt6.QtCore.Qt.MouseButton.LeftButton )
         pass
 
-    def _navigate_to_tab(self, asdf, tab_name):
-        for i in range(asdf.count()):
-            if asdf.tabText(i) == tab_name:
-                asdf.setCurrentIndex(i)
-                return
+
+
+
+
+    def _navigate_to_tab(self, widget, tab_name) -> Type[QWidget]:
+        tab_widget: PyQt6.QtWidgets.QTabWidget = widget.currentWidget().tabWidget
+        for i in range(tab_widget.count()):
+            if tab_widget.tabText(i) == tab_name:
+                tab_widget.setCurrentIndex(i)
+                return tab_widget.currentWidget()
             else:
                 pass
         raise ValueError('tab not found')
@@ -81,9 +77,9 @@ class TestUI:
         widget.currentWidget().passwordField.clear()
         widget.currentWidget().passwordField.setText(password)
         qtbot.mouseClick(widget.currentWidget().connectButton, PyQt6.QtCore.Qt.MouseButton.LeftButton)
-
-
-
+        def logged_in_successfully():
+            assert not isinstance(widget.currentWidget(),iBridges.IrodsLoginWindow)
+        qtbot.waitUntil(logged_in_successfully)
 
     def bootstrap_ibridges(self, qtbot):
         widget = iBridges.widget

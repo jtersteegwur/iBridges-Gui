@@ -38,10 +38,10 @@ class ReportingRepository:
     def detach_obverver(self, observer):
         self.observers.remove(observer)
 
-    def notify_reporting_changed(self, config_uuid, report_uuid):
-        self.write_current_reporting_to_file()
+    def notify_reporting_changed(self, config_uuid: str, report_uuid :str, events: set[str]):
+        self.write_current_reporting_to_file(config_uuid, report_uuid, events)
         for obs in self.observers:
-            obs(config_uuid, report_uuid)
+            obs(config_uuid, report_uuid, events)
 
     def json_dict_to_event(self, json_dict:dict):
         return SynchronisationStatusEvent(
@@ -89,7 +89,7 @@ class ReportingRepository:
         }
         return result
 
-    def write_current_reporting_to_file(self):
+    def write_current_reporting_to_file(self, bla,bla2,bla3):
         with open(self.events_path, "r") as file_obj:
             data = json.load(file_obj)
         data['reports'] = [self.report_to_json_dict(blah) for blah in self._data]
@@ -109,7 +109,7 @@ class ReportingRepository:
                                              total_bytes_processed=0,
                                              total_files_processed_succesfully=0)
         self._data.append(report)
-        self.notify_reporting_changed(config_uuid, report.uuid)
+        self.notify_reporting_changed(config_uuid, report.uuid, events={})
         return report.uuid
 
     def find_reports_by_config_id(self,  config_id: str):
@@ -132,13 +132,13 @@ class ReportingRepository:
         report: SynchronisationStatusReport = self.find_report_by_uuid(report_uuid)
         report.events.extend(events)
         self.recalculate_report_metadata(report)
-        self.notify_reporting_changed(report.config_id, report_uuid)
+        self.notify_reporting_changed(report.config_id, report_uuid, {event.source for event in events})
 
     def add_event_to_report(self, report_uuid: str, event: SynchronisationStatusEvent):
         report: SynchronisationStatusReport = self.find_report_by_uuid(report_uuid)
         report.events.append(event)
         self.recalculate_report_metadata(report)
-        self.notify_reporting_changed(report.config_id, report_uuid)
+        self.notify_reporting_changed(report.config_id, report_uuid, {event.source})
 
     def recalculate_report_metadata(self, report: SynchronisationStatusReport,fill_end_date_when_no_event = False):
         report.total_files_processed = len(report.events)
@@ -168,4 +168,4 @@ class ReportingRepository:
                 if bytes is not None:
                     event.bytes = bytes
                 self.recalculate_report_metadata(report)
-                self.notify_reporting_changed(report.config_id, report_uuid)
+                self.notify_reporting_changed(report.config_id, report_uuid, {source})

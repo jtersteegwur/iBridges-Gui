@@ -70,7 +70,11 @@ class ConfigRepository:
         return len(self.config_data)
 
     def get_by_index(self, index: int):
-        return self.config_data[index]
+        if index < 0 or index >= len(self.config_data):
+            logging.error("invalid index!")
+            return None
+        else:
+            return self.config_data[index]
 
     def get_by_id(self, id: str):
         for index, config_item in enumerate(self.config_data):

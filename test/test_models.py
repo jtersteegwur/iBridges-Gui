@@ -1,12 +1,11 @@
 import datetime
 
 import gui
-import pathlib
-import json
 import os
 
+import gui.synchronisationConfigurationTableModel
 from synchronisation.reporting_repository import ReportingRepository
-from synchronisation.reporting import SynchronisationStatusEvent, SynchronisationStatusReport
+from synchronisation.reporting import SynchronisationStatusEvent
 from synchronisation.configuration_repository import ConfigRepository
 from synchronisation.configuration_item import SynchronisationConfigItem
 
@@ -15,7 +14,7 @@ class TestModelImplementations:
     def test_SynchronisationConfigurationTableModel(self, tmp_path, qtmodeltester):
         joinpath = tmp_path.joinpath("synchronisation.json")
         repository = ConfigRepository(str(joinpath))
-        model = gui.IrodsSynchronisation.SynchronisationConfigurationTableModel(repository)
+        model = gui.SynchronisationConfigurationTableModel.SynchronisationConfigurationTableModel(repository)
         repository.add_config(SynchronisationConfigItem(type="Scheduled upload",
                                                         local="C:\\iRods\\jtersteegwur\\iBridges-Gui\\docker",
                                                         remote="/RDMacc/home/terst007",

@@ -13,7 +13,3 @@ class SynchronisationConfigItem:
     cron: str
     uuid: str = None
 
-    def validate_cron_localpath(self):
-        local_valid = os.path.exists(self.local)
-        cron_valid = croniter.is_valid(self.cron)
-        return cron_valid and local_valid
