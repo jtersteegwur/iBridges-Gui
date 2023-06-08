@@ -1,12 +1,6 @@
-from PyQt6.QtWidgets import QWidget
-from gui.IrodsSynchronisation import IrodsSynchronisation
-from typing import Type
 
 import sys
-
-import irods.collection
 import setproctitle
-
 sys.path.append('..')
 # sys.frozen = True
 
@@ -25,7 +19,9 @@ import irodsConnector.resource
 import irodsConnector.session
 
 
+from PyQt6.QtWidgets import QWidget
 from pytest import mark
+from typing import Type
 
 
 

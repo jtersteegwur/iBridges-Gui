@@ -1,4 +1,8 @@
 
+import sys
+import setproctitle
+sys.path.append('..')
+
 import os
 
 from pytest import raises,mark
