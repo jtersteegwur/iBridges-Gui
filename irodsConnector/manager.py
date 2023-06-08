@@ -136,9 +136,9 @@ class IrodsConnector(object):
     def ensure_data_object(self, data_object_name: str) -> irods.data_object.DataObject:
         return self._data_op.ensure_data_object(data_object_name)
 
-    def execute_rule(self, params: dict, rule_file: str = None, body: str = '', rule_type: str = 'irods_rule_language',
+    def execute_rule(self, rule_file: str = None, body: str = '', params: dict = None, rule_type: str = 'irods_rule_language',
                      output: str = 'ruleExecOut') -> tuple:
-        return self._rules.execute_rule(params, rule_file, body, rule_type, output)
+        return self._rules.execute_rule(rule_file, body, params, rule_type, output)
 
     def get_collection(self, path: str) -> irods.collection.Collection:
         return self._data_op.get_collection(path)

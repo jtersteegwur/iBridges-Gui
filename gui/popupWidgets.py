@@ -14,8 +14,32 @@ from PyQt6.uic import loadUi
 from PyQt6 import QtCore
 from PyQt6 import QtGui
 
+from gui.ui_files.createExperimentPopup import Ui_createExperimentPopup
 from gui.ui_files.createCollection import Ui_createCollection
 from gui.ui_files.irodsIndexPopup import Ui_irodsIndexPopup
+
+class npecCreateExperiment(QDialog, Ui_createExperimentPopup):
+    finished = QtCore.pyqtSignal(str, str)
+    def __init__(self, module_list):
+        super().__init__()
+        if getattr(sys, 'frozen', False):
+            super().setupUi(self)
+        else:
+            loadUi("gui/ui_files/createExperimentPopup.ui", self)
+        self.setWindowTitle("Create Experiment")
+        self.setWindowFlags(QtCore.Qt.WindowType.WindowStaysOnTopHint)
+        self.combobox_module.addItems(module_list)
+        self.buttonOk.clicked.connect(self.ok)
+        self.buttonCancel.clicked.connect(self.cancel)
+
+    def ok(self):
+        module_name = self.combobox_module.currentText()
+        exp_name = self.le_expname.text()
+        self.finished.emit(module_name, exp_name)
+        self.done(1)
+
+    def cancel(self):
+        self.done(1)
 
 
 class irodsCreateCollection(QDialog, Ui_createCollection):

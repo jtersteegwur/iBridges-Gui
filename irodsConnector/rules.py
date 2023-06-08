@@ -21,7 +21,7 @@ class Rules(object):
         """
         self._ses_man = ses_man
 
-    def execute_rule(self, params: dict, rule_file: str = None, body: str = '', rule_type: str = 'irods_rule_language',
+    def execute_rule(self, rule_file: str = None, body: str = '', params: dict = None, rule_type: str = 'irods_rule_language',
                      output: str = 'ruleExecOut') -> tuple:
         """Execute an iRODS rule.
 

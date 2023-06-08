@@ -114,7 +114,7 @@ class mainmenu(PyQt6.QtWidgets.QMainWindow, gui.ui_files.MainMenu.Ui_MainWindow)
         self.tabWidget.addTab(self.irodsInfo, "Info")
 
     def setupTabNpecRules(self, ic, ienv):
-        self.npecRules = gui.npecRules.npecRules(ic)
+        self.npecRules = gui.npecRules.NPECRules(ic)
         self.tabWidget.addTab(self.npecRules, "NPEC Rules")
 
     # Connect functions
