@@ -22,6 +22,7 @@ import irodsConnector.session
 from PyQt6.QtWidgets import QWidget
 from pytest import mark
 from typing import Type
+from gui.IrodsSynchronisation import IrodsSynchronisation
 
 
 
