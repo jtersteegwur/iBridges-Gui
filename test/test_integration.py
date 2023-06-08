@@ -1,17 +1,16 @@
 
 import os
 
-from pytest import raises
+from pytest import raises,mark
 from irodsConnector.manager import IrodsConnector
 from pathlib import Path
 from utils.sync_result import FileSyncMethod,SyncResult
 
 ENVIRONMENT_PATH_FILE = 'irods_environment_new.json'
 ENVIRONMENT = os.path.join(os.path.expanduser('~'), '.irods', ENVIRONMENT_PATH_FILE)
-PASSWORD = "I should remove this but better safe than sorry"
-with open('C:\\Users\\terst\\.irods\\passwd.txt', 'r') as file:
-    PASSWORD = file.read().rstrip()
+PASSWORD = os.environ.get('irods_password')
 
+@mark.skipif(PASSWORD is None, reason="you're running this test somewhere where password is not set")
 class TestIntegration:
 
     def test_diff_upload_single_file_error_file_not_exists(self, tmp_path):

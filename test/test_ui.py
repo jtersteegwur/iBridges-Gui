@@ -25,22 +25,16 @@ import irodsConnector.resource
 import irodsConnector.session
 
 
-
+from pytest import mark
 
 
 
 ENVIRONMENT_PATH_FILE = 'irods_environment_new.json'
 ENVIRONMENT = os.path.join(os.path.expanduser('~'), '.irods', ENVIRONMENT_PATH_FILE)
-PASSWORD = "I should remove this but better safe than sorry"
-with open('C:\\Users\\terst\\.irods\\passwd.txt', 'r') as file:
-    PASSWORD = file.read().rstrip()
+PASSWORD = os.environ.get('irods_password')
 
-
-
+@mark.skipif(PASSWORD is None, reason="you're running this test somewhere where password is not set")
 class TestUI:
-
-
-
     def test_login(self, qtbot):
         widget = self.bootstrap_ibridges(qtbot)
         self.log_into_ibridges(qtbot, widget, PASSWORD)
@@ -48,17 +42,12 @@ class TestUI:
             assert not isinstance(widget.currentWidget(),iBridges.IrodsLoginWindow)
         qtbot.waitUntil(check_widget)
 
+    @mark.skip(reason="Just a stub, also need to ensure that the order tests are running in does not matter")
     def test_synchronisation(self, qtbot):
         widget = self.bootstrap_ibridges(qtbot)
         self.log_into_ibridges(qtbot, widget, PASSWORD)
         tab: IrodsSynchronisation = self._navigate_to_tab(widget, "Synchronisation")
-        qtbot.mouseClick(tab.create_configuration_button, PyQt6.QtCore.Qt.MouseButton.LeftButton )
-        pass
-
-
-
-
-
+        assert isinstance(tab,IrodsSynchronisation)
     def _navigate_to_tab(self, widget, tab_name) -> Type[QWidget]:
         tab_widget: PyQt6.QtWidgets.QTabWidget = widget.currentWidget().tabWidget
         for i in range(tab_widget.count()):
