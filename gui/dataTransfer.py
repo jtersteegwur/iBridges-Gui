@@ -15,6 +15,7 @@ from PyQt6.uic import loadUi
 from gui.ui_files.dataTransferState import Ui_dataTransferState
 import utils
 
+from irodsConnector.manager import IrodsConnector
 
 class dataTransfer(QDialog, Ui_dataTransferState):
     """
@@ -22,7 +23,7 @@ class dataTransfer(QDialog, Ui_dataTransferState):
     """
     finished = pyqtSignal(bool, object)
 
-    def __init__(self, ic, upload, localFsPath, irodsColl, irodsTreeIdx=None, resource=None):
+    def __init__(self, ic: IrodsConnector, upload, localFsPath, irodsColl, irodsTreeIdx=None, resource=None):
         """
 
         Parameters
@@ -209,7 +210,7 @@ class getDataState(QObject):
     # Lists with size in bytes
     finished = pyqtSignal(list, list, str, str, list)
 
-    def __init__(self, ic, localFsPath, coll, upload):
+    def __init__(self, ic: IrodsConnector, localFsPath, coll, upload):
         """
 
         Parameters
@@ -299,7 +300,7 @@ class UpDownload(QObject):
     """
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, ic, upload, localFS, Coll, totalSize, resource, diff, addFiles, force, sync_list):
+    def __init__(self, ic : IrodsConnector, upload, localFS, Coll, totalSize, resource, diff, addFiles, force, sync_list):
         """
 
         Parameters
@@ -315,7 +316,7 @@ class UpDownload(QObject):
         force
         """
         super().__init__()
-        self.ic = ic
+        self.ic : IrodsConnector= ic
         self.upload = upload
         self.localFS = localFS
         self.Coll = Coll
@@ -330,7 +331,7 @@ class UpDownload(QObject):
     def run(self):    
         try:
             if self.upload:
-                self.ic.upload_data_with_sync_result_generator(self.sync_list, self.resource, int(self.totalSize), not self.force)
+                self.ic.upload_data_using_sync_result(self.sync_list, self.resource, int(self.totalSize), not self.force)
                 self.finished.emit(True, "Upload finished")
             else:
                 self.ic.download_data_using_sync_result(self.sync_list,1024**3, True)
