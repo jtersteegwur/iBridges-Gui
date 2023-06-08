@@ -439,6 +439,7 @@ class DataOperation(object):
         diffs : tuple
             Output of diff functions.
 
+
         """
         logging.info('iRODS DOWNLOAD: %s-->%s', source.path, destination)
         if self.is_dataobject_or_collection(source):
@@ -748,13 +749,9 @@ class DataOperation(object):
             local_path = dirpath + locpartialpath.replace('/', os.sep)
             data_object = self._ses_man.session.data_objects.get(irods_path)
             irods_and_local_path = (irods_path, local_path)
-            if scope == "size":
-                if data_object.size != os.path.getsize(local_path):
-                    diff.append(irods_and_local_path)
-            elif scope == "checksum":
-                should_add = self.compare_checksum_difference(data_object, local_path)
-                if should_add:
-                    diff.append(irods_and_local_path)
+            should_add = self.compare_checksum_difference(data_object, local_path)
+            if should_add:
+                diff.append(irods_and_local_path)
             else:  # same paths, no scope
                 diff.append(irods_and_local_path)
         return diff

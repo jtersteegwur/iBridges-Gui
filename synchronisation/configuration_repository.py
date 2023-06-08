@@ -5,6 +5,7 @@ from utils import utils
 import os
 import json
 import uuid
+import logging
 
 DEFAULT_EMPTY_SYNCHRONISATION_CONFIG = {
     'comment': "this file is programmatically controlled by ibridges, modification by hand might "
