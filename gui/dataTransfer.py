@@ -316,7 +316,7 @@ class UpDownload(QObject):
         force
         """
         super().__init__()
-        self.ic : IrodsConnector= ic
+        self.ic = ic
         self.upload = upload
         self.localFS = localFS
         self.Coll = Coll
