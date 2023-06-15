@@ -1,9 +1,8 @@
+""" Tests for the synchronisation models """
+import datetime
+import os
 import sys
 sys.path.append('..')
-import datetime
-
-import os
-
 from gui.synchronisationConfigurationTableModel import SynchronisationConfigurationTableModel
 from synchronisation.reporting_repository import ReportingRepository
 from synchronisation.reporting import SynchronisationStatusEvent
@@ -12,6 +11,9 @@ from synchronisation.configuration_item import SynchronisationConfigItem
 
 
 class TestModelImplementations:
+    """
+    Tests for the synchronisation models
+    """
     def test_SynchronisationConfigurationTableModel(self, tmp_path, qtmodeltester):
         joinpath = tmp_path.joinpath("synchronisation.json")
         repository = ConfigRepository(str(joinpath))
@@ -110,6 +112,3 @@ class TestModelImplementations:
         self._create_dummy_file(test_local_dir.joinpath("file2.abc"), 10)
         self._create_dummy_file(test_local_dir.joinpath("file3.abc"), 10)
         return test_local_dir
-
-
-
