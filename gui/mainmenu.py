@@ -57,6 +57,7 @@ class mainmenu(PyQt6.QtWidgets.QMainWindow, gui.ui_files.MainMenu.Ui_MainWindow)
                 'tabCreateTicket': self.setupTabCreateTicket,
                 'tabAmberWorkflow': self.setupTabAmberWorkflow,
                 'tabInfo': self.setupTabInfo,
+                'tabSynchronisation': self.setupTabSynchronisation
             }
             found = ienv.get('ui_tabs', False)
             if not found:
@@ -107,6 +108,10 @@ class mainmenu(PyQt6.QtWidgets.QMainWindow, gui.ui_files.MainMenu.Ui_MainWindow)
     def setupTabCreateTicket(self, ic, ienv):
         self.createTicket = gui.irodsCreateTicket.irodsCreateTicket(ic)
         self.tabWidget.addTab(self.createTicket, "Create access tokens")
+
+    def setupTabSynchronisation(self, ic, ienv):
+        self.synchronisationTab = gui.IrodsSynchronisation.IrodsSynchronisation(ic)
+        self.tabWidget.addTab(self.synchronisationTab, "Synchronisation")
 
     def setupTabInfo(self, ic, ienv):
         self.irodsInfo = gui.irodsInfo.irodsInfo(ic)

@@ -35,7 +35,13 @@ class Ui_irodsLogin(object):
 "QLabel#passError, QLabel#envError, QLabel#icommandsError\n"
 "{\n"
 "    color: rgb(217, 174, 23);\n"
-"}")
+"}\n"
+"\n"
+"QRadioButton\n"
+"{ \n"
+"    selection-color: rgb(217, 174, 23);\n"
+"}\n"
+"")
         self.gridLayoutWidget = QtWidgets.QWidget(irodsLogin)
         self.gridLayoutWidget.setGeometry(QtCore.QRect(10, 10, 741, 251))
         self.gridLayoutWidget.setObjectName("gridLayoutWidget")

@@ -158,7 +158,6 @@ class Ui_tabELNData(object):
         font = QtGui.QFont()
         font.setPointSize(13)
         font.setBold(True)
-        font.setWeight(75)
         self.label_16.setFont(font)
         self.label_16.setObjectName("label_16")
         self.horizontalLayout_10.addWidget(self.label_16)

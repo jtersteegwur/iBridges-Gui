@@ -75,10 +75,7 @@ class Ui_tabBrowser(object):
         self.refreshButton = QtWidgets.QPushButton(tabBrowser)
         self.refreshButton.setText("")
         icon = QtGui.QIcon()
-        if getattr(sys, "frozen", False):
-            icon.addPixmap(QtGui.QPixmap(r"../gui/ui_files/../icons/refresh.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-        else:
-            icon.addPixmap(QtGui.QPixmap(r"gui/ui_files/../icons/refresh.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        icon.addPixmap(QtGui.QPixmap(r"..\icons\refresh.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
         self.refreshButton.setIcon(icon)
         self.refreshButton.setObjectName("refreshButton")
         self.gridLayout.addWidget(self.refreshButton, 0, 2, 1, 1)
@@ -86,20 +83,14 @@ class Ui_tabBrowser(object):
         self.parentButton.setEnabled(True)
         self.parentButton.setText("")
         icon1 = QtGui.QIcon()
-        if getattr(sys, "frozen", False):
-            icon1.addPixmap(QtGui.QPixmap(r"../gui/ui_files/../icons/arrow-up.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-        else:
-            icon1.addPixmap(QtGui.QPixmap(r"gui/ui_files/../icons/arrow-up.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        icon1.addPixmap(QtGui.QPixmap(r"..\icons\arrow-up.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
         self.parentButton.setIcon(icon1)
         self.parentButton.setObjectName("parentButton")
         self.gridLayout.addWidget(self.parentButton, 0, 3, 1, 1)
         self.homeButton = QtWidgets.QPushButton(tabBrowser)
         self.homeButton.setText("")
         icon2 = QtGui.QIcon()
-        if getattr(sys, "frozen", False):
-            icon2.addPixmap(QtGui.QPixmap(r"../gui/ui_files/../icons/home.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-        else:
-            icon2.addPixmap(QtGui.QPixmap(r"gui/ui_files/../icons/home.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        icon2.addPixmap(QtGui.QPixmap(r"..\icons\home.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
         self.homeButton.setIcon(icon2)
         self.homeButton.setObjectName("homeButton")
         self.gridLayout.addWidget(self.homeButton, 0, 4, 1, 1)

@@ -55,7 +55,7 @@ python3.10 -m pip install -r requirements.txt
 
 ### iBridges config.json
 
-*iBridges* will create its own configuration file in `~/.ibridges/` containing the name of the last *iRODS* environment file used.  This `config.json` file can be updated to control other aspects of *iBridges*.  For example:
+*iBridges* will create its own configuration file in `~/.ibridges/` containing the name of the last *iRODS* environment file used.  This `ibridges_config.json` file can be updated to control other aspects of *iBridges*.  For example:
 
 ```json
 {

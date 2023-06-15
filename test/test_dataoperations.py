@@ -1,16 +1,14 @@
 """ Tests pertaining to irodsConnector.dataOperations """
-import shutil
-import sys
-from unittest.mock import MagicMock, Mock, patch, ANY, call
+from unittest.mock import MagicMock, Mock, patch
 from pytest import raises
 from irods.exception import CollectionDoesNotExist
 import irodsConnector.dataOperations
 from irodsConnector.resource import NotEnoughFreeSpace
 
 
-def setup_data_operation(attrs_resource_mock=None, attrs_session_mock=None) -> (
-        irodsConnector.dataOperations.DataOperation, MagicMock, MagicMock):
-    """ Create a mocked version of th """
+def setup_data_operation(attrs_resource_mock=None, attrs_session_mock=None) -> tuple[
+        irodsConnector.dataOperations.DataOperation, MagicMock, MagicMock]:
+    """ Create a mocked version of the iRODS connector """
 
     if attrs_session_mock is None:
         attrs_session_mock = {}
@@ -35,7 +33,7 @@ class TestDataOperations:
         test = "test"
         class_under_test.dataobject_exists(test)
         # Not sure what we're going to test with all these pass-through methods...
-        # For now, I'll just add one (for copy-pasting purposes ;) ) and only test the more complicated methods
+        # For now, add one (for copy-pasting purposes) and only test the more complicated methods
         mock_session.session.data_objects.exists.assert_called_with(test)
 
     def test_upload_data_invalid_source_path(self):
@@ -207,7 +205,7 @@ class TestDataOperations:
                         class_under_test.diff_irods_localfs = Mock(return_value=([], [], ['file_1', 'file_2']))
                         class_under_test.irods_get = Mock()
                         class_under_test.download_data(source=source_mock, destination=dest_mock, size=100, force=True)
-                        ## To much path manipulation going on to mock and check args
+                        # To much path manipulation going on to mock and check args
                         assert len(class_under_test.irods_get.call_args_list) == 2
 
     def test_obj_file_localdir(self):
@@ -233,8 +231,9 @@ class TestDataOperations:
     def test_obj_file_objpath_not_exists_locally(self):
         localpath_dir = "/mocked/path/to/file"
         obj_path = '/mocked/path/to/irods'
-        class_under_test, _, mock_session = setup_data_operation(None, {'session.collections.exists.return_value': False
-            , 'session.data_objects.exists.return_value': True})
+        class_under_test, _, mock_session = setup_data_operation(None,
+                                                                 {'session.collections.exists.return_value': False, 
+                                                                  'session.data_objects.exists.return_value': True})
         with patch('os.path.isfile', **{'return_value': False}):
             with patch('os.path.isdir', **{'return_value': False}):
                 diff, only_fs, only_irods, = class_under_test.diff_obj_file(obj_path, localpath_dir, "checksum")
@@ -243,8 +242,9 @@ class TestDataOperations:
     def test_obj_file_objpath_exists_locally_but_not_in_irods(self):
         localpath_dir = "/mocked/path/to/file"
         obj_path = '/mocked/path/to/irods'
-        class_under_test, _, mock_session = setup_data_operation(None, {'session.collections.exists.return_value': False
-            , 'session.data_objects.exists.return_value': False})
+        class_under_test, _, mock_session = setup_data_operation(None,
+                                                                 {'session.collections.exists.return_value': False,
+                                                                  'session.data_objects.exists.return_value': False})
         with patch('os.path.isfile', **{'return_value': True}):
             with patch('os.path.isdir', **{'return_value': False}):
                 diff, only_fs, only_irods = class_under_test.diff_obj_file(obj_path, localpath_dir, "checksum")
@@ -253,8 +253,9 @@ class TestDataOperations:
     def test_obj_file_objpath_scope_size(self):
         localpath_dir = "/mocked/path/to/file"
         obj_path = '/mocked/path/to/irods'
-        class_under_test, _, mock_session = setup_data_operation(None, {'session.collections.exists.return_value': False
-            , 'session.data_objects.exists.return_value': False})
+        class_under_test, _, mock_session = setup_data_operation(None,
+                                                                 {'session.collections.exists.return_value': False,
+                                                                  'session.data_objects.exists.return_value': False})
         with patch('os.path.isfile', **{'return_value': True}):
             with patch('os.path.isdir', **{'return_value': False}):
                 diff, only_fs, only_irods = class_under_test.diff_obj_file(obj_path, localpath_dir, "checksum")

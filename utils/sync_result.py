@@ -2,6 +2,8 @@
 
 """
 from enum import Enum
+from dataclasses import dataclass
+
 
 # def get_diff_download(source, target)
 ## Should result in a list[SyncResult] comprising of:
@@ -15,10 +17,10 @@ class FileSyncMethod(Enum):
     CREATE = 1
     UPDATE = 2
 
+
+@dataclass
 class SyncResult:
-    """
-     Return value object for determining diffs
-     """
+    """     Return value object for determining diffs     """
     source_path: str = None  # can be both a irods or (local) filesystem
     target_path: str = None  # can be both a irods or (local) filesystem
     source_file_size: int = None  # bytes
